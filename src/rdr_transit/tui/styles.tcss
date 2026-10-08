@@ -1,0 +1,216 @@
+/* RDR-Transit nmtui-inspired aesthetic stylesheet */
+
+Screen {
+    background: #11141c;
+    color: #cdd6f4;
+}
+
+#app-header {
+    dock: top;
+    height: 3;
+    background: #181c27;
+    border-bottom: heavy #313244;
+    padding: 0 1;
+}
+
+#header-title {
+    color: #89dceb;
+    text-style: bold;
+    content-align: left middle;
+}
+
+#header-ip-badge {
+    color: #a6e3a1;
+    content-align: right middle;
+    text-style: bold;
+}
+
+#main-container {
+    layout: horizontal;
+    height: 1fr;
+    padding: 1;
+}
+
+/* Left Pane: Network Peers */
+#left-pane {
+    width: 50%;
+    height: 100%;
+    margin-right: 1;
+    border: round #45475a;
+    background: #181c27;
+    padding: 0 1;
+}
+
+#left-pane:focus-within {
+    border: round #89b4fa;
+}
+
+.pane-title {
+    text-style: bold;
+    color: #89b4fa;
+    padding: 0 1;
+    background: #1e2230;
+    margin-bottom: 1;
+    border-bottom: solid #313244;
+}
+
+#peer-table {
+    height: 1fr;
+    background: #141721;
+    border: none;
+}
+
+#peer-table > .datatable--cursor {
+    background: #313244;
+    color: #cdd6f4;
+    text-style: bold;
+}
+
+/* Right Pane: Staging and Controls */
+#right-pane {
+    width: 50%;
+    height: 100%;
+    border: round #45475a;
+    background: #181c27;
+    padding: 0 1;
+}
+
+#right-pane:focus-within {
+    border: round #89b4fa;
+}
+
+#staging-box {
+    height: 1fr;
+    background: #141721;
+    border: solid #313244;
+    margin-bottom: 1;
+    padding: 0 1;
+}
+
+#staging-list {
+    height: 1fr;
+    background: #141721;
+}
+
+#staging-summary {
+    dock: bottom;
+    height: 2;
+    background: #1e2230;
+    color: #f9e2af;
+    text-style: bold;
+    padding: 0 1;
+    border-top: solid #313244;
+}
+
+/* Receiver Server Panel */
+#receiver-panel {
+    height: 8;
+    background: #181c27;
+    border: round #45475a;
+    margin-bottom: 1;
+    padding: 0 1;
+}
+
+#receiver-panel.running {
+    border: round #a6e3a1;
+}
+
+#receiver-status-label {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* Button toolbar */
+.button-row {
+    layout: horizontal;
+    height: 3;
+    align: right middle;
+    margin-top: 1;
+}
+
+Button {
+    margin: 0 1;
+    min-width: 14;
+    height: 3;
+    border: none;
+    background: #313244;
+    color: #cdd6f4;
+    text-style: bold;
+}
+
+Button:hover {
+    background: #45475a;
+    color: #ffffff;
+}
+
+Button.-primary {
+    background: #1e66f5;
+    color: #ffffff;
+}
+
+Button.-primary:hover {
+    background: #04a5e5;
+}
+
+Button.-success {
+    background: #40a02b;
+    color: #ffffff;
+}
+
+Button.-success:hover {
+    background: #a6e3a1;
+    color: #11111b;
+}
+
+Button.-danger {
+    background: #d20f39;
+    color: #ffffff;
+}
+
+/* Modals & Dialogs */
+ModalScreen {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.dialog-window {
+    width: 65;
+    height: auto;
+    max-height: 80%;
+    background: #181c27;
+    border: round #89b4fa;
+    padding: 1 2;
+}
+
+.dialog-title {
+    text-style: bold;
+    color: #89b4fa;
+    margin-bottom: 1;
+    border-bottom: solid #313244;
+    padding-bottom: 1;
+}
+
+.dialog-buttons {
+    layout: horizontal;
+    align: right middle;
+    margin-top: 1;
+    height: 3;
+}
+
+ProgressBar {
+    margin: 1 0;
+}
+
+.stat-row {
+    color: #bac2de;
+    margin: 0 0;
+}
+
+/* Footer status bar */
+#app-footer {
+    dock: bottom;
+    height: 1;
+    background: #181c27;
+    color: #6c7086;
+    padding: 0 1;
+}
