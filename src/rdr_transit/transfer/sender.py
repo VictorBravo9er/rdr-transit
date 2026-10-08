@@ -34,6 +34,7 @@ class TransferStats:
     """Real-time and final statistics for a batch transfer operation."""
     total_files: int = 0
     completed_files: int = 0
+    skipped_files: int = 0
     failed_files: int = 0
     total_bytes: int = 0
     transferred_bytes: int = 0
@@ -61,7 +62,7 @@ class TransferStats:
     @property
     def percent_complete(self) -> float:
         if self.total_bytes <= 0:
-            return 100.0 if self.completed_files == self.total_files else 0.0
+            return 100.0 if (self.completed_files + self.skipped_files) == self.total_files else 0.0
         return min(100.0, (self.transferred_bytes / self.total_bytes) * 100.0)
 
 
@@ -72,17 +73,26 @@ def send_single_file(
     receiver_ip: str,
     transfer_port: int = DEFAULT_TRANSFER_PORT,
     timeout: float = DEFAULT_SOCKET_TIMEOUT,
+    include_checksum: bool = False,
     on_chunk: Optional[Callable[[int], None]] = None,
     is_cancelled_func: Optional[Callable[[], bool]] = None,
-) -> Tuple[bool, str]:
+) -> Tuple[bool, bool, str]:
     """
     Transmit a single file over TCP using the LAN-Share framing protocol.
-    Returns: (success: bool, error_msg: str)
+    Returns: (success: bool, skipped: bool, error_msg: str)
     """
     try:
         fsize = os.path.getsize(abs_path)
     except OSError as e:
-        return False, f"Could not read local file size: {e}"
+        return False, False, f"Could not read local file size: {e}"
+
+    sha256_hex = ""
+    if include_checksum:
+        from rdr_transit.utils.filesystem import compute_file_sha256
+        try:
+            sha256_hex = compute_file_sha256(abs_path)
+        except OSError:
+            pass
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(timeout)
@@ -91,8 +101,24 @@ def send_single_file(
         sock.connect((receiver_ip, transfer_port))
 
         # 1. Header packet
-        header_pkt = create_header_packet(file_name, rel_folder, fsize)
+        header_pkt = create_header_packet(file_name, rel_folder, fsize, sha256=sha256_hex)
         sock.sendall(header_pkt)
+
+        # Check if receiver immediately responds with SKIP or CANCEL
+        sock.settimeout(0.3)
+        try:
+            from rdr_transit.protocol import read_packet, PacketType
+            resp = read_packet(sock)
+            if resp:
+                ptype, _ = resp
+                if ptype == PacketType.SKIP:
+                    return True, True, "Skipped (already exists on receiver)"
+                elif ptype == PacketType.CANCEL:
+                    return False, False, "Rejected by receiver"
+        except (socket.timeout, OSError):
+            pass
+        finally:
+            sock.settimeout(timeout)
 
         # 2. Data chunks
         if fsize > 0:
@@ -103,7 +129,7 @@ def send_single_file(
                             sock.sendall(create_cancel_packet())
                         except Exception:
                             pass
-                        return False, "Cancelled by user"
+                        return False, False, "Cancelled by user"
 
                     chunk = f.read(DEFAULT_CHUNK_SIZE)
                     if not chunk:
@@ -126,10 +152,38 @@ def send_single_file(
         except (socket.timeout, ConnectionResetError, OSError):
             pass
 
-        return True, ""
+        return True, False, ""
 
     except Exception as e:
         logger.debug("Failed sending %s to %s:%d: %s", file_name, receiver_ip, transfer_port, e)
+        return False, False, str(e)
+    finally:
+        sock.close()
+
+
+def send_text_snippet(
+    text: str,
+    receiver_ip: str,
+    transfer_port: int = DEFAULT_TRANSFER_PORT,
+    sender_name: str = "",
+    timeout: float = 10.0,
+) -> Tuple[bool, str]:
+    """Send a text or clipboard snippet over TCP."""
+    from rdr_transit.protocol import create_snippet_packet
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((receiver_ip, transfer_port))
+        pkt = create_snippet_packet(text, sender_name)
+        sock.sendall(pkt)
+        sock.settimeout(3.0)
+        try:
+            while sock.recv(1024):
+                pass
+        except Exception:
+            pass
+        return True, ""
+    except Exception as e:
         return False, str(e)
     finally:
         sock.close()
@@ -144,6 +198,7 @@ class BatchSender:
         receiver_ip: str,
         transfer_port: int = DEFAULT_TRANSFER_PORT,
         max_workers: int = 1,
+        include_checksum: bool = False,
         on_file_start: Optional[Callable[[int, str, int], None]] = None,
         on_chunk: Optional[Callable[[int, int, int], None]] = None,
         on_file_done: Optional[Callable[[int, str, bool, str], None]] = None,
@@ -153,6 +208,7 @@ class BatchSender:
         self.receiver_ip = receiver_ip
         self.transfer_port = transfer_port
         self.max_workers = max(1, max_workers)
+        self.include_checksum = include_checksum
 
         self.on_file_start = on_file_start
         self.on_chunk = on_chunk
@@ -215,12 +271,13 @@ class BatchSender:
             if self.on_stats_update:
                 self.on_stats_update(self.stats)
 
-        success, err = send_single_file(
+        success, skipped, err = send_single_file(
             abs_path=abs_path,
             rel_folder=rel_folder,
             file_name=file_name,
             receiver_ip=self.receiver_ip,
             transfer_port=self.transfer_port,
+            include_checksum=self.include_checksum,
             on_chunk=chunk_callback,
             is_cancelled_func=self.is_cancelled,
         )
@@ -228,12 +285,16 @@ class BatchSender:
         with self._lock:
             self.stats.active_transfers -= 1
             if success:
-                self.stats.completed_files += 1
+                if skipped:
+                    self.stats.skipped_files += 1
+                else:
+                    self.stats.completed_files += 1
             else:
                 self.stats.failed_files += 1
 
         if self.on_file_done:
-            self.on_file_done(idx, display_name, success, err)
+            status_msg = "Skipped" if skipped else err
+            self.on_file_done(idx, display_name, success, status_msg)
 
         if self.on_stats_update:
             self.on_stats_update(self.stats)

@@ -30,12 +30,14 @@ from rdr_transit.config import (
     SYSTEM_OS,
 )
 from rdr_transit.discovery import DiscoveredPeer, PeerDiscoveryService
+from rdr_transit.settings import AppConfig, load_config, save_config
 from rdr_transit.transfer.receiver import ReceiverServer
-from rdr_transit.transfer.sender import BatchSender, TransferStats
+from rdr_transit.transfer.sender import BatchSender, TransferStats, send_text_snippet
 from rdr_transit.tui.screens import (
     AddPathDialog,
     HelpDialog,
     ManualPeerDialog,
+    SendSnippetDialog,
     TransferProgressModal,
 )
 from rdr_transit.utils.filesystem import collect_target_files, format_size
@@ -53,6 +55,7 @@ class RDRTransitApp(App[None]):
         Binding("q", "quit", "Quit", priority=True),
         Binding("d", "scan_peers", "Scan Peers"),
         Binding("a", "add_path", "Add Path"),
+        Binding("p", "send_snippet", "Snippet"),
         Binding("c", "clear_queue", "Clear Queue"),
         Binding("s", "send_staged", "Send Staged"),
         Binding("r", "toggle_receiver", "Toggle Receiver"),
@@ -61,25 +64,30 @@ class RDRTransitApp(App[None]):
 
     def __init__(self) -> None:
         super().__init__()
+        self.config: AppConfig = load_config()
         self.primary_ip = get_primary_ip()
-        self.discovery_service = PeerDiscoveryService()
+        self.discovery_service = PeerDiscoveryService(broadcast_port=self.config.broadcast_port)
         self.receiver_server = ReceiverServer(
-            download_dir=DEFAULT_DOWNLOAD_DIR,
+            download_dir=Path(self.config.download_dir),
+            port=self.config.transfer_port,
+            allow_skip=True,
+            verify_checksum=self.config.verify_checksum,
             on_file_start=self._on_incoming_file_start,
             on_file_complete=self._on_incoming_file_complete,
+            on_snippet_received=self._on_incoming_snippet,
         )
 
         self.staged_paths: List[Path] = []
         self.selected_target_ip: Optional[str] = None
         self.active_peers: Dict[str, DiscoveredPeer] = {}
-        self.parallel_workers: int = 4
+        self.parallel_workers: int = self.config.default_parallel
         self.current_transfer_modal: Optional[TransferProgressModal] = None
         self.current_batch_sender: Optional[BatchSender] = None
 
     def compose(self) -> ComposeResult:
         # Header banner
         with Horizontal(id="app-header"):
-            yield Label(f"⚡ RDR TRANSIT | {HOSTNAME} ({SYSTEM_OS})", id="header-title")
+            yield Label(f"⚡ RDR TRANSIT | {self.config.device_name} ({SYSTEM_OS})", id="header-title")
             yield Label(f"IP: {self.primary_ip}", id="header-ip-badge")
 
         with Horizontal(id="main-container"):
@@ -100,6 +108,7 @@ class RDRTransitApp(App[None]):
 
                 with Horizontal(classes="button-row"):
                     yield Button("Add Path", id="btn-add-path", classes="-primary")
+                    yield Button("Send Snippet", id="btn-snippet")
                     yield Button("Clear", id="btn-clear-path")
                     yield Button("Send Staged", id="btn-send", classes="-success")
 
@@ -166,6 +175,8 @@ class RDRTransitApp(App[None]):
             self._open_manual_ip_dialog()
         elif btn_id == "btn-add-path":
             self.action_add_path()
+        elif btn_id == "btn-snippet":
+            self.action_send_snippet()
         elif btn_id == "btn-clear-path":
             self.action_clear_queue()
         elif btn_id == "btn-send":
@@ -197,6 +208,42 @@ class RDRTransitApp(App[None]):
                     self._update_staging_ui()
                     self.notify(f"Staged: {p.name}")
         self.push_screen(AddPathDialog(), callback)
+
+    def action_send_snippet(self) -> None:
+        """Open Send Snippet dialog."""
+        target_ip = self.selected_target_ip
+        if not target_ip:
+            table = self.query_one("#peer-table", DataTable)
+            if table.row_count > 0:
+                coords = table.coordinate_to_cell_key(table.cursor_coordinate)
+                target_ip = str(coords.row_key.value)
+                self.selected_target_ip = target_ip
+            else:
+                self.notify("Select a peer first to send snippet to!", severity="warning")
+                self._open_manual_ip_dialog()
+                return
+
+        def callback(snippet_text: Optional[str]) -> None:
+            if snippet_text:
+                self._run_send_snippet_worker(snippet_text, target_ip)
+        self.push_screen(SendSnippetDialog(), callback)
+
+    @work(thread=True)
+    def _run_send_snippet_worker(self, text: str, target_ip: str) -> None:
+        ok, err = send_text_snippet(
+            text=text,
+            receiver_ip=target_ip,
+            transfer_port=self.config.transfer_port,
+            sender_name=self.config.device_name,
+        )
+        if ok:
+            self.call_from_thread(self.notify, f"✓ Sent snippet to {target_ip}!")
+        else:
+            self.call_from_thread(self.notify, f"✗ Failed sending snippet: {err}", severity="error")
+
+    def _on_incoming_snippet(self, peer_ip: str, text: str, path: str) -> None:
+        preview = text[:40] + ("..." if len(text) > 40 else "")
+        self.notify(f"📋 Received snippet from {peer_ip}: {preview}", severity="information")
 
     def action_clear_queue(self) -> None:
         """Clear all staged transfer paths."""
@@ -345,20 +392,22 @@ class RDRTransitApp(App[None]):
             files_to_send=files,
             receiver_ip=target_ip,
             max_workers=self.parallel_workers,
+            include_checksum=self.config.verify_checksum,
             on_stats_update=stats_callback,
         )
         self.current_batch_sender = sender
         stats = sender.run()
 
         success = (stats.failed_files == 0 and not stats.is_cancelled)
-        msg = f"Transferred {stats.completed_files}/{stats.total_files} files ({format_size(stats.transferred_bytes)})"
+        skip_msg = f" ({stats.skipped_files} skipped)" if stats.skipped_files > 0 else ""
+        msg = f"Transferred {stats.completed_files}/{stats.total_files} files{skip_msg} ({format_size(stats.transferred_bytes)})"
 
         if self.current_transfer_modal:
             self.call_from_thread(self.current_transfer_modal.mark_completed, success, msg)
 
         self.call_from_thread(
             self.notify,
-            f"Transfer complete: {stats.completed_files}/{stats.total_files} files sent",
+            f"Transfer complete: {stats.completed_files}/{stats.total_files} sent{skip_msg}",
             severity="information" if success else "error",
         )
 

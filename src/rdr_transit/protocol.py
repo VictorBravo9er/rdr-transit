@@ -9,13 +9,17 @@ from typing import Any, Optional, Tuple
 
 
 class PacketType(IntEnum):
-    """LAN-Share packet types."""
+    """LAN-Share & RDR-Transit packet types."""
     HEADER = 1
     DATA = 2
     FINISH = 3
     CANCEL = 4
     PAUSE = 5
     RESUME = 6
+    SKIP = 7        # Receiver tells sender file already exists (incremental sync)
+    QUERY = 8       # Sender queries if file with size/checksum exists
+    QUERY_RESP = 9  # Receiver response to query
+    SNIPPET = 10    # Clipboard/text snippet transfer
 
 
 # Header format: 4-byte signed int (little-endian) + 1-byte signed char
@@ -24,19 +28,39 @@ PACKET_HEADER_STRUCT = struct.Struct("<ib")
 PACKET_HEADER_SIZE = PACKET_HEADER_STRUCT.size
 
 
-def create_header_packet(name: str, folder: str, size: int) -> bytes:
+def create_header_packet(name: str, folder: str, size: int, sha256: str = "") -> bytes:
     """
     Construct a Header packet (PacketType = 1).
-    Header payload contains a JSON object: {"name": str, "folder": str, "size": int}.
+    Header payload contains a JSON object: {"name": str, "folder": str, "size": int, "sha256": str}.
     """
-    header_data = {
+    header_data: dict[str, Any] = {
         "name": name,
         "folder": folder,
         "size": size,
     }
+    if sha256:
+        header_data["sha256"] = sha256
+
     payload = json.dumps(header_data, ensure_ascii=False).encode("utf-8")
     header = PACKET_HEADER_STRUCT.pack(len(payload), PacketType.HEADER)
     return header + payload
+
+
+def create_snippet_packet(text: str, sender_name: str = "") -> bytes:
+    """Construct a text snippet packet (PacketType = 10)."""
+    data = {
+        "text": text,
+        "sender": sender_name,
+    }
+    payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
+    header = PACKET_HEADER_STRUCT.pack(len(payload), PacketType.SNIPPET)
+    return header + payload
+
+
+def create_skip_packet(reason: str = "already_exists") -> bytes:
+    """Construct a Skip packet (PacketType = 7)."""
+    payload = reason.encode("utf-8")
+    return PACKET_HEADER_STRUCT.pack(len(payload), PacketType.SKIP) + payload
 
 
 def create_data_packet(chunk: bytes) -> bytes:
@@ -63,6 +87,7 @@ def parse_header_payload(payload: bytes) -> dict[str, Any]:
         "name": str(data.get("name", "")),
         "folder": str(data.get("folder", "")),
         "size": int(data.get("size", 0)),
+        "sha256": str(data.get("sha256", "")),
     }
 
 

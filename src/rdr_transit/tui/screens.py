@@ -81,6 +81,35 @@ class ManualPeerDialog(ModalScreen[Optional[str]]):
             self.dismiss(None)
 
 
+class SendSnippetDialog(ModalScreen[Optional[str]]):
+    """Dialog to enter text or clipboard snippet to send."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog-window"):
+            yield Label("📋 Send Text / Clipboard Snippet", classes="dialog-title")
+            yield Label("Enter text or paste from clipboard:")
+            yield Input(id="snippet-input", placeholder="Type message or paste URL/text...")
+            with Horizontal(classes="dialog-buttons"):
+                yield Button("Cancel", id="btn-cancel", classes="-danger")
+                yield Button("Send Snippet", id="btn-send-snip", classes="-primary")
+
+    def on_mount(self) -> None:
+        self.query_one("#snippet-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._submit()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-send-snip":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def _submit(self) -> None:
+        val = self.query_one("#snippet-input", Input).value.strip()
+        self.dismiss(val if val else None)
+
+
 class TransferProgressModal(ModalScreen[None]):
     """Live transfer dialog displaying real-time progress bars and speed."""
 

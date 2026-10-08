@@ -84,11 +84,33 @@ rdr-transit send my_project/
 
 #### Receive Files (Receiver Server)
 ```bash
-# Start listening for incoming files on TCP port 17116
+# Start listening for incoming files on TCP port 17116 (with incremental skip & SHA-256 verification)
 rdr-transit receive
 
 # Custom save directory and port
 rdr-transit receive --output-dir ~/Transfers --port 17116
+
+# Force overwrite existing files without skipping
+rdr-transit receive --no-skip
+```
+
+#### Clipboard & Text Snippet Sharing
+```bash
+# Send text or URL directly to a peer
+rdr-transit snippet "https://github.com/victor/RDR-transit" --target 192.168.137.1
+
+# Pipe clipboard or command output to peer
+cat token.txt | rdr-transit snippet --target 192.168.137.1
+```
+
+#### User Configuration & Settings
+```bash
+# View configuration
+rdr-transit config
+
+# Update default settings
+rdr-transit config --set default_parallel 6
+rdr-transit config --set download_dir ~/Transfers
 ```
 
 #### Discover Devices

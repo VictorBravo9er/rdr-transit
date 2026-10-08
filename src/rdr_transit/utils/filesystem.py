@@ -10,8 +10,22 @@ from typing import List, Optional, Set, Tuple
 from rdr_transit.config import DEFAULT_EXCLUDED_DIRS
 
 
+import hashlib
+
 # Regex pattern for characters forbidden in Windows filenames: \ / : * ? " < > |
 WINDOWS_INVALID_CHARS = re.compile(r'[\\/:*?"<>|]')
+
+
+def compute_file_sha256(path: str | Path, block_size: int = 65536) -> str:
+    """Compute SHA-256 hex digest for a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(block_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def format_size(num_bytes: int) -> str:
