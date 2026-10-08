@@ -72,6 +72,9 @@ rdr-transit tui
 # Send an entire folder (recursively preserves directory layout)
 rdr-transit send /path/to/folder --target 192.168.137.1
 
+# High-speed transfer with 4 parallel concurrent streams (-j 4)
+rdr-transit send /path/to/large_directory --target 192.168.137.1 -j 4
+
 # Send multiple files
 rdr-transit send file1.iso file2.pdf --target 192.168.137.1
 

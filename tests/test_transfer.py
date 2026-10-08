@@ -59,3 +59,52 @@ def test_end_to_end_transfer(tmp_path):
 
     finally:
         server.stop()
+
+
+def test_parallel_transfers(tmp_path):
+    # Prepare multiple source files
+    src_dir = tmp_path / "parallel_source"
+    src_dir.mkdir()
+    files_to_send = []
+    
+    for i in range(5):
+        f = src_dir / f"file_{i}.dat"
+        content = f"Content for file {i} - {'X' * 5000}".encode()
+        f.write_bytes(content)
+        files_to_send.append((str(f), "batch", f"file_{i}.dat"))
+
+    rec_dir = tmp_path / "parallel_dest"
+    rec_dir.mkdir()
+    test_port = 27117
+
+    server = ReceiverServer(
+        download_dir=rec_dir,
+        port=test_port,
+        bind_host="127.0.0.1",
+    )
+    server.start()
+
+    try:
+        time.sleep(0.1)
+
+        # Transmit with 3 concurrent workers
+        sender = BatchSender(
+            files_to_send=files_to_send,
+            receiver_ip="127.0.0.1",
+            transfer_port=test_port,
+            max_workers=3,
+        )
+        stats = sender.run()
+
+        assert stats.completed_files == 5
+        assert stats.failed_files == 0
+
+        # Verify all 5 files were saved properly
+        for i in range(5):
+            dest_file = rec_dir / "batch" / f"file_{i}.dat"
+            assert dest_file.exists()
+            assert dest_file.read_bytes() == f"Content for file {i} - {'X' * 5000}".encode()
+
+    finally:
+        server.stop()
+

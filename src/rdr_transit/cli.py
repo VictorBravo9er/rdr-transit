@@ -160,7 +160,12 @@ def handle_send(args: argparse.Namespace) -> None:
     total_files = len(files)
 
     if args.quiet:
-        batch = BatchSender(files_to_send=files, receiver_ip=target_ip, transfer_port=args.port)
+        batch = BatchSender(
+            files_to_send=files,
+            receiver_ip=target_ip,
+            transfer_port=args.port,
+            max_workers=args.parallel,
+        )
         stats = batch.run()
         print(f"Transferred {stats.completed_files}/{total_files} in {stats.elapsed_seconds:.2f}s ({stats.speed_mb_per_sec:.2f} MB/s)")
         return
@@ -182,9 +187,10 @@ def handle_send(args: argparse.Namespace) -> None:
 
         def on_start(idx: int, fname: str, fsize: int) -> None:
             short = ("..." + fname[-35:]) if len(fname) > 38 else fname
+            par_label = f" [cyan]({args.parallel} parallel)[/cyan]" if args.parallel > 1 else ""
             progress.update(
                 file_task,
-                description=f"[bold green]File {idx}/{total_files}:[/bold green] [white]{short}[/white]",
+                description=f"[bold green]File {idx}/{total_files}:[/bold green] [white]{short}[/white]{par_label}",
                 completed=0,
                 total=fsize,
             )
@@ -197,6 +203,7 @@ def handle_send(args: argparse.Namespace) -> None:
             files_to_send=files,
             receiver_ip=target_ip,
             transfer_port=args.port,
+            max_workers=args.parallel,
             on_file_start=on_start,
             on_chunk=on_chunk,
         )
@@ -209,6 +216,7 @@ def handle_send(args: argparse.Namespace) -> None:
     status_label = "[bold green]Completed[/bold green]" if stats.failed_files == 0 else "[bold red]Completed with errors[/bold red]"
     summary_table.add_row("Status:", status_label)
     summary_table.add_row("Target:", f"{target_ip}:{args.port}")
+    summary_table.add_row("Parallel Streams:", str(args.parallel))
     summary_table.add_row("Transferred:", f"{stats.completed_files} / {total_files} files")
     summary_table.add_row("Total Data:", format_size(stats.transferred_bytes))
     summary_table.add_row("Duration:", f"{stats.elapsed_seconds:.2f} seconds")
@@ -242,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_send.add_argument("paths", nargs="+", help="Files or directories to send")
     p_send.add_argument("-t", "--target", help="Target peer IP address")
     p_send.add_argument("-p", "--port", type=int, default=DEFAULT_TRANSFER_PORT, help="Transfer TCP port")
+    p_send.add_argument("-j", "--parallel", type=int, default=1, help="Number of concurrent parallel file transfer streams")
     p_send.add_argument("-b", "--broadcast-port", type=int, default=DEFAULT_BROADCAST_PORT, help="Discovery UDP port")
     p_send.add_argument("--timeout", type=float, default=2.0, help="Peer discovery timeout in seconds")
     p_send.add_argument("--name", default=HOSTNAME, help="Device name announced to peers")

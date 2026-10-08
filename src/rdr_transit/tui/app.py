@@ -72,6 +72,7 @@ class RDRTransitApp(App[None]):
         self.staged_paths: List[Path] = []
         self.selected_target_ip: Optional[str] = None
         self.active_peers: Dict[str, DiscoveredPeer] = {}
+        self.parallel_workers: int = 4
         self.current_transfer_modal: Optional[TransferProgressModal] = None
         self.current_batch_sender: Optional[BatchSender] = None
 
@@ -312,6 +313,7 @@ class RDRTransitApp(App[None]):
             target_label=target_name,
             total_bytes=total_bytes,
             total_files=total_files,
+            parallel_workers=self.parallel_workers,
             on_cancel=self._cancel_active_transfer,
         )
         self.current_transfer_modal = modal
@@ -342,6 +344,7 @@ class RDRTransitApp(App[None]):
         sender = BatchSender(
             files_to_send=files,
             receiver_ip=target_ip,
+            max_workers=self.parallel_workers,
             on_stats_update=stats_callback,
         )
         self.current_batch_sender = sender

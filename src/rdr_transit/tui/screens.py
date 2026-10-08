@@ -84,18 +84,20 @@ class ManualPeerDialog(ModalScreen[Optional[str]]):
 class TransferProgressModal(ModalScreen[None]):
     """Live transfer dialog displaying real-time progress bars and speed."""
 
-    def __init__(self, target_label: str, total_bytes: int, total_files: int, on_cancel=None):
+    def __init__(self, target_label: str, total_bytes: int, total_files: int, parallel_workers: int = 1, on_cancel=None):
         super().__init__()
         self.target_label = target_label
         self.total_bytes = total_bytes
         self.total_files = total_files
+        self.parallel_workers = parallel_workers
         self.on_cancel_callback = on_cancel
         self.is_finished = False
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog-window"):
             yield Label(f"⚡ Streaming to: {self.target_label}", classes="dialog-title", id="transfer-title")
-            yield Label(f"Total: {self.total_files} files ({format_size(self.total_bytes)})", classes="stat-row", id="stat-total")
+            stream_label = f" ({self.parallel_workers} parallel streams)" if self.parallel_workers > 1 else ""
+            yield Label(f"Total: {self.total_files} files ({format_size(self.total_bytes)}){stream_label}", classes="stat-row", id="stat-total")
             yield Label("Current File: Preparing...", classes="stat-row", id="stat-current-file")
 
             yield ProgressBar(total=100, show_eta=True, id="overall-bar")
