@@ -27,6 +27,7 @@ class AppConfig:
     broadcast_port: int = DEFAULT_BROADCAST_PORT
     download_dir: str = str(DEFAULT_DOWNLOAD_DIR)
     default_parallel: int = 4
+    beacon_interval: float = 4.0
     incremental_sync: bool = False
     verify_checksum: bool = True
     peer_aliases: Dict[str, str] = field(default_factory=dict)  # {"alias": "ip_or_hostname"}
@@ -47,6 +48,7 @@ def load_config() -> AppConfig:
                 broadcast_port=data.get("broadcast_port", DEFAULT_BROADCAST_PORT),
                 download_dir=data.get("download_dir", str(DEFAULT_DOWNLOAD_DIR)),
                 default_parallel=data.get("default_parallel", 4),
+                beacon_interval=float(data.get("beacon_interval", 4.0)),
                 incremental_sync=data.get("incremental_sync", False),
                 verify_checksum=data.get("verify_checksum", True),
                 peer_aliases=data.get("peer_aliases", {}),

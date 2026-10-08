@@ -68,6 +68,11 @@ class ReceiverServer:
 
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try:
+                self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
         self._server_sock.bind((self.bind_host, self.port))
         self._server_sock.listen(10)
         self._server_sock.settimeout(1.0)

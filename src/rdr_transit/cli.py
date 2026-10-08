@@ -338,6 +338,12 @@ def handle_tui(args: argparse.Namespace) -> None:
     app.run()
 
 
+def handle_gui(args: argparse.Namespace) -> None:
+    """Launch Desktop Graphical User Interface (GUI)."""
+    from rdr_transit.gui.app import launch_gui
+    launch_gui()
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct argument parser for CLI commands."""
     parser = argparse.ArgumentParser(
@@ -347,6 +353,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
+
+    # GUI subcommand
+    p_gui = subparsers.add_parser("gui", help="Launch desktop Graphical User Interface (GUI)")
 
     # TUI subcommand
     p_tui = subparsers.add_parser("tui", help="Launch interactive nmtui-inspired Terminal UI")
@@ -406,6 +415,8 @@ def main() -> None:
         handle_snippet(args)
     elif args.subcommand == "config":
         handle_config(args)
+    elif args.subcommand == "gui":
+        handle_gui(args)
     elif args.subcommand == "discover":
         handle_discover(args)
     elif args.subcommand == "tui" or args.subcommand is None:

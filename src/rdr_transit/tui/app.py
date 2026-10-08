@@ -290,16 +290,21 @@ class RDRTransitApp(App[None]):
             self._start_receiver()
 
     def _start_receiver(self) -> None:
-        self.receiver_server.start()
-        panel = self.query_one("#receiver-panel", Vertical)
-        panel.add_class("running")
-        label = self.query_one("#receiver-status-label", Label)
-        label.update(
-            f"[bold green]● Active[/bold green] | Port: [cyan]{DEFAULT_TRANSFER_PORT}[/cyan] | Saving to: [dim]{DEFAULT_DOWNLOAD_DIR}[/dim]"
-        )
-        btn = self.query_one("#btn-toggle-receiver", Button)
-        btn.label = "Stop Receiver"
-        btn.classes = "-danger"
+        try:
+            self.receiver_server.start()
+            panel = self.query_one("#receiver-panel", Vertical)
+            panel.add_class("running")
+            label = self.query_one("#receiver-status-label", Label)
+            label.update(
+                f"[bold green]● Active[/bold green] | Port: [cyan]{DEFAULT_TRANSFER_PORT}[/cyan] | Saving to: [dim]{DEFAULT_DOWNLOAD_DIR}[/dim]"
+            )
+            btn = self.query_one("#btn-toggle-receiver", Button)
+            btn.label = "Stop Receiver"
+            btn.classes = "-danger"
+        except OSError as e:
+            label = self.query_one("#receiver-status-label", Label)
+            label.update(f"[bold yellow]⚠ Port {DEFAULT_TRANSFER_PORT} in use[/bold yellow]")
+            self.notify(f"Receiver port {DEFAULT_TRANSFER_PORT} unavailable: {e}", severity="warning")
 
     def _stop_receiver(self) -> None:
         self.receiver_server.stop()

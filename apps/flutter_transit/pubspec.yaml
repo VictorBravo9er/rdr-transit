@@ -1,0 +1,27 @@
+name: rdr_transit_mobile
+description: "Cross-platform mobile and desktop app for RDR Transit / LAN-Share P2P file transfers."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  path_provider: ^2.1.2
+  file_picker: ^8.0.0
+  crypto: ^3.0.3
+  intl: ^0.19.0
+  share_plus: ^9.0.0
+  open_filex: ^4.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

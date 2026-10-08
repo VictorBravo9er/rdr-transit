@@ -48,7 +48,21 @@ pip install -e .
 
 ## Usage
 
-### 1. Interactive Terminal UI (TUI) Mode
+### 1. Graphical User Interface (GUI) Mode
+
+Launch the Desktop GUI:
+```bash
+rdr-transit gui
+```
+- **Discovered Peers Live Grid**: Auto-detects local devices with OS icons (Android, Apple, Linux, Windows).
+- **Drag & Select File Staging**: Select multiple files or entire directories with real-time size computation.
+- **Transfer Dashboard**: Live dual progress bars, transfer speeds (MB/s), and incremental skip status.
+- **Background Receiver Toggle**: One-click enable/disable receiver daemon.
+- **Instant Snippet Sharing**: Fast cross-device clipboard & text sharing.
+
+---
+
+### 2. Interactive Terminal UI (TUI) Mode
 
 Launch the `nmtui`-inspired full-screen interface:
 ```bash
@@ -65,7 +79,24 @@ rdr-transit tui
 
 ---
 
-### 2. Command Line Interface (CLI) Mode
+### 3. Mobile Apps (Android & Apple iOS)
+
+A companion Flutter application is available in `apps/flutter_transit/`:
+- **Android**: Supports APK and Play Store bundle with Wi-Fi Multicast lock and media pickers.
+- **Apple iOS**: Seamless iPhone/iPad support with Apple Files app integration (`UIFileSharingEnabled`) and local network discovery permissions.
+
+To run or build the mobile apps:
+```bash
+cd apps/flutter_transit
+flutter pub get
+flutter run -d android   # Run on Android
+flutter run -d ios       # Run on iOS
+```
+See [apps/flutter_transit/README.md](file:///home/victor/antigravity/RDR-transit/apps/flutter_transit/README.md) for full instructions.
+
+---
+
+### 4. Command Line Interface (CLI) Mode
 
 #### Send Files or Directories
 ```bash
