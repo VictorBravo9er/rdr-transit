@@ -1,7 +1,22 @@
+import './style.css';
 import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
+import { registerSW } from 'virtual:pwa-register';
 import { WebRTCManager, type ConnectionStatus, type ProgressInfo, type ReceivedFile } from './webrtc';
 import { formatBytes, formatSpeed } from './protocol';
+
+// Register Service Worker for instant offline & F5 reload without refetching assets from web
+const updateSW = registerSW({
+  onNeedRefresh() {
+    showToast('New version available! Refreshing to update...', 'info');
+    setTimeout(() => {
+      updateSW(true);
+    }, 1500);
+  },
+  onOfflineReady() {
+    console.log('App ready for offline use and instantaneous cache reload.');
+  },
+});
 
 // DOM Elements
 const statusPill = document.getElementById('connection-status-pill') as HTMLDivElement;

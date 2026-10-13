@@ -123,14 +123,15 @@ rdr-transit discover
 
 ### 3. Client-Side Web App (`webapp/`)
 
-A 100% client-side web application built with **Vite + Tailwind CSS + WebRTC DataChannels** (zero backend server required):
+A 100% client-side web application built with **Vite + Tailwind CSS + WebRTC DataChannels + PWA Service Worker** (zero backend server required):
 
 ```bash
 cd webapp
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
+- **Instant F5 / Offline Cache**: Precaches all assets in browser Cache Storage using a Service Worker. Refreshing (F5) serves directly from local cache without re-downloading existing files; new versions are fetched automatically in the background.
 - **Zero-Backend LAN Speed**: Streams directly peer-to-peer over your local network using WebRTC DataChannels.
 - **Serverless QR & Token Handshake**: Pair your phone and desktop in seconds using camera scanning or copy-paste tokens.
 - **Backpressure File Streaming**: Handles large file transfers safely without browser memory spikes.
