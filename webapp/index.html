@@ -251,21 +251,21 @@
             </div>
           </div>
 
-          <!-- RIGHT COLUMN: RECEIVED FEED & HISTORY -->
+          <!-- RIGHT COLUMN: TRANSMISSIONS FEED & HISTORY -->
           <div class="space-y-6">
             <div class="bg-[#161b22] border border-[#30363d] rounded-2xl p-5 space-y-4 shadow-xl h-full flex flex-col">
               <div class="flex items-center justify-between border-b border-[#30363d] pb-3">
                 <h3 class="font-bold text-sm text-white flex items-center gap-2">
-                  📥 Received Items <span id="received-count-badge" class="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300">0</span>
+                  <span>⇄</span> Transmissions <span id="transmissions-count-badge" class="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300">0</span>
                 </h3>
                 <button id="btn-clear-history" class="text-xs text-slate-500 hover:text-slate-400 transition">
                   Clear
                 </button>
               </div>
 
-              <div id="received-items-list" class="flex-1 space-y-3 overflow-y-auto max-h-[460px] pr-1">
-                <div id="empty-received-placeholder" class="text-center py-12 text-slate-500 text-xs">
-                  No files received yet.<br />Items sent to you will appear here.
+              <div id="transmissions-items-list" class="flex-1 space-y-3 overflow-y-auto max-h-[460px] pr-1">
+                <div id="empty-transmissions-placeholder" class="text-center py-12 text-slate-500 text-xs">
+                  No transmissions yet.<br />Sent and received files and messages will appear here.
                 </div>
               </div>
             </div>

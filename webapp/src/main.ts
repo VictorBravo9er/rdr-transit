@@ -4,6 +4,8 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { registerSW } from 'virtual:pwa-register';
 import { WebRTCManager, type ConnectionStatus, type ProgressInfo, type ReceivedFile } from './webrtc';
 import { formatBytes, formatSpeed } from './protocol';
+import { SignalingChannel, type SignalingMessage } from './signaling';
+import { saveFileBlob, getFileBlob, clearAllFileBlobs } from './db';
 
 // Register Service Worker for instant offline & F5 reload without refetching assets from web
 const updateSW = registerSW({
@@ -17,6 +19,25 @@ const updateSW = registerSW({
     console.log('App ready for offline use and instantaneous cache reload.');
   },
 });
+
+// Storage Keys
+const STORAGE_SESSION_KEY = 'rdr_active_session';
+const STORAGE_TRANSMISSIONS_KEY = 'rdr_transmissions';
+const STORAGE_RELOAD_FLAG = 'rdr_is_refreshing';
+
+interface StoredSession {
+  sessionId: string;
+  role: 'host' | 'joiner';
+}
+
+export interface TransmissionItem {
+  id: string;
+  type: 'file-received' | 'file-sent' | 'message-received' | 'message-sent';
+  name?: string;
+  size?: number;
+  text?: string;
+  timestamp: number;
+}
 
 // DOM Elements
 const statusPill = document.getElementById('connection-status-pill') as HTMLDivElement;
@@ -84,16 +105,18 @@ const snippetInput = document.getElementById('snippet-input') as HTMLTextAreaEle
 const btnPasteClipboard = document.getElementById('btn-paste-clipboard') as HTMLButtonElement;
 const btnSendSnippet = document.getElementById('btn-send-snippet') as HTMLButtonElement;
 
-// Received list
-const receivedItemsList = document.getElementById('received-items-list') as HTMLDivElement;
-const emptyReceivedPlaceholder = document.getElementById('empty-received-placeholder') as HTMLDivElement;
-const receivedCountBadge = document.getElementById('received-count-badge') as HTMLSpanElement;
+// Transmissions list
+const transmissionsItemsList = document.getElementById('transmissions-items-list') as HTMLDivElement;
+const emptyTransmissionsPlaceholder = document.getElementById('empty-transmissions-placeholder') as HTMLDivElement;
+const transmissionsCountBadge = document.getElementById('transmissions-count-badge') as HTMLSpanElement;
 const btnClearHistory = document.getElementById('btn-clear-history') as HTMLButtonElement;
 const toastContainer = document.getElementById('toast-container') as HTMLDivElement;
 
 // State
 let stagedFiles: File[] = [];
-let receivedCount = 0;
+let transmissions: TransmissionItem[] = [];
+let signaling: SignalingChannel | null = null;
+let activeBlobs = new Map<string, Blob>();
 
 // Initialize WebRTC Manager
 const rtc = new WebRTCManager({
@@ -102,6 +125,7 @@ const rtc = new WebRTCManager({
   onReceiveProgress: handleReceiveProgress,
   onFileReceived: handleFileReceived,
   onSnippetReceived: handleSnippetReceived,
+  onSessionSync: handleSessionSync,
   onError: (msg) => showToast(msg, 'error'),
 });
 
@@ -137,11 +161,34 @@ function handleStatusChange(status: ConnectionStatus, message?: string) {
     viewPairing.classList.add('hidden');
     viewDashboard.classList.remove('hidden');
 
-    showToast('Direct P2P Link Established!', 'success');
+    // Persist active session in sessionStorage
+    const currentSessionId = rtc.getSessionId();
+    const currentRole = rtc.getRole();
+    if (currentSessionId && currentRole) {
+      sessionStorage.setItem(
+        STORAGE_SESSION_KEY,
+        JSON.stringify({ sessionId: currentSessionId, role: currentRole } as StoredSession)
+      );
+      if (!signaling) {
+        setupSignaling(currentSessionId, currentRole);
+      }
+    }
+
+    showToast('Direct P2P Link Active!', 'success');
+  } else if (status === 'reconnecting') {
+    statusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800 animate-pulse';
+    statusText.textContent = message || 'Reconnecting to peer...';
+    btnDisconnect.classList.remove('hidden');
+
+    // Keep dashboard view visible during reconnect
+    viewPairing.classList.add('hidden');
+    viewDashboard.classList.remove('hidden');
   } else if (status === 'connecting') {
     statusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800';
     statusText.textContent = message || 'Connecting...';
   } else {
+    // Disconnected
+    sessionStorage.removeItem(STORAGE_SESSION_KEY);
     statusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700';
     statusText.textContent = 'Disconnected';
     btnDisconnect.classList.add('hidden');
@@ -149,8 +196,132 @@ function handleStatusChange(status: ConnectionStatus, message?: string) {
     viewPairing.classList.remove('hidden');
     viewDashboard.classList.add('hidden');
     activeTransferPanel.classList.add('hidden');
+
+    if (signaling) {
+      signaling.close();
+      signaling = null;
+    }
   }
 }
+
+function handleSessionSync(sessionId: string) {
+  const role = rtc.getRole() || 'joiner';
+  sessionStorage.setItem(
+    STORAGE_SESSION_KEY,
+    JSON.stringify({ sessionId, role } as StoredSession)
+  );
+  if (!signaling) {
+    setupSignaling(sessionId, role);
+  }
+}
+
+// ----------------------------------------------------
+// Signaling & Auto-Reconnect Mechanics
+// ----------------------------------------------------
+
+function setupSignaling(sessionId: string, currentRole: 'host' | 'joiner') {
+  if (signaling) {
+    signaling.close();
+  }
+
+  signaling = new SignalingChannel(sessionId, async (msg: SignalingMessage) => {
+    if (msg.type === 'disconnect') {
+      rtc.close(true);
+      return;
+    }
+
+    if (msg.type === 'peer_refreshing') {
+      rtc.startReconnecting('Peer refreshing, waiting to reconnect...');
+      return;
+    }
+
+    if (rtc.isConnected()) {
+      return; // Already connected
+    }
+
+    if (msg.type === 'reconnect_ping' && currentRole === 'host') {
+      try {
+        const offer = await rtc.createOfferToken();
+        signaling?.send({ type: 'reconnect_offer', offerToken: offer });
+      } catch (err) {
+        console.warn('Failed to create reconnect offer:', err);
+      }
+    } else if (msg.type === 'reconnect_offer' && currentRole === 'joiner' && msg.offerToken) {
+      try {
+        const answer = await rtc.acceptOfferAndCreateAnswerToken(msg.offerToken);
+        signaling?.send({ type: 'reconnect_answer', answerToken: answer });
+      } catch (err) {
+        console.warn('Failed to accept reconnect offer:', err);
+      }
+    } else if (msg.type === 'reconnect_answer' && currentRole === 'host' && msg.answerToken) {
+      try {
+        await rtc.acceptAnswerToken(msg.answerToken);
+      } catch (err) {
+        console.warn('Failed to accept reconnect answer:', err);
+      }
+    }
+  });
+}
+
+// Attempt session restoration on page refresh
+async function tryRestoreSessionOnRefresh() {
+  const savedSessionRaw = sessionStorage.getItem(STORAGE_SESSION_KEY);
+  if (!savedSessionRaw) return;
+
+  try {
+    const saved: StoredSession = JSON.parse(savedSessionRaw);
+    if (!saved.sessionId || !saved.role) return;
+
+    // Restore dashboard view and reconnecting state immediately
+    rtc.setSessionId(saved.sessionId);
+    rtc.setRole(saved.role);
+
+    viewPairing.classList.add('hidden');
+    viewDashboard.classList.remove('hidden');
+    statusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800 animate-pulse';
+    statusText.textContent = 'Reconnecting to peer...';
+    btnDisconnect.classList.remove('hidden');
+
+    // Restore transmissions list from storage
+    loadStoredTransmissions();
+
+    // Setup signaling channel
+    setupSignaling(saved.sessionId, saved.role);
+    rtc.startReconnecting('Reconnecting to peer...');
+
+    if (saved.role === 'host') {
+      try {
+        const offer = await rtc.createOfferToken();
+        signaling?.send({ type: 'reconnect_offer', offerToken: offer });
+      } catch (err) {
+        console.warn('Failed to generate initial reconnect offer:', err);
+      }
+    } else if (saved.role === 'joiner') {
+      signaling?.send({ type: 'reconnect_ping', fromRole: 'joiner' });
+    }
+  } catch (e) {
+    console.warn('Failed to restore session:', e);
+  }
+}
+
+// ----------------------------------------------------
+// Page Lifecycle & Unload Handling
+// ----------------------------------------------------
+
+window.addEventListener('beforeunload', (e) => {
+  sessionStorage.setItem(STORAGE_RELOAD_FLAG, 'true');
+
+  if (rtc.isConnected() && signaling) {
+    signaling.send({ type: 'peer_refreshing' });
+  }
+
+  // If a file transfer is actively in flight, prompt confirmation so users don't accidentally abort it
+  if (rtc.isTransferring()) {
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
 
 // ----------------------------------------------------
 // Pairing Handshake Flow
@@ -175,6 +346,11 @@ btnCreateOffer.addEventListener('click', async () => {
   btnCreateOffer.textContent = 'Generating...';
 
   try {
+    const newSessionId = 'rdr_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    rtc.setSessionId(newSessionId);
+    rtc.setRole('host');
+    setupSignaling(newSessionId, 'host');
+
     const offerToken = await rtc.createOfferToken();
     hostInitialStep.classList.add('hidden');
     hostQrStep.classList.remove('hidden');
@@ -224,6 +400,7 @@ btnProcessOffer.addEventListener('click', async () => {
   btnProcessOffer.textContent = 'Connecting...';
 
   try {
+    rtc.setRole('joiner');
     const answerToken = await rtc.acceptOfferAndCreateAnswerToken(token);
     joinAnswerStep.classList.remove('hidden');
     joinAnswerTokenInput.value = answerToken;
@@ -299,7 +476,15 @@ async function closeCameraScanner() {
 }
 
 btnDisconnect.addEventListener('click', () => {
-  rtc.close();
+  rtc.sendDisconnect();
+  if (signaling) {
+    signaling.send({ type: 'disconnect' });
+    signaling.close();
+    signaling = null;
+  }
+  sessionStorage.removeItem(STORAGE_SESSION_KEY);
+  rtc.close(true);
+  showToast('Disconnected from peer', 'info');
 });
 
 // ----------------------------------------------------
@@ -404,6 +589,16 @@ btnStartSend.addEventListener('click', async () => {
     const ok = await rtc.sendFile(file);
     if (!ok) break;
 
+    // Record sent file in Transmissions list
+    const sentItem: TransmissionItem = {
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      type: 'file-sent',
+      name: file.name,
+      size: file.size,
+      timestamp: Date.now(),
+    };
+    addTransmission(sentItem);
+
     // Remove from staging as sent
     stagedFiles = stagedFiles.filter((f) => f !== file);
     renderStagedFiles();
@@ -444,36 +639,24 @@ function handleReceiveProgress(p: ProgressInfo) {
   }
 }
 
-function handleFileReceived(file: ReceivedFile) {
-  emptyReceivedPlaceholder.classList.add('hidden');
-  receivedCount++;
-  receivedCountBadge.textContent = receivedCount.toString();
+async function handleFileReceived(file: ReceivedFile) {
+  // Store blob in memory & IndexedDB
+  activeBlobs.set(file.id, file.blob);
+  await saveFileBlob(file.id, file.blob);
 
-  const card = document.createElement('div');
-  card.className = 'p-3 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-2';
+  const item: TransmissionItem = {
+    id: file.id,
+    type: 'file-received',
+    name: file.name,
+    size: file.size,
+    timestamp: file.receivedAt.getTime(),
+  };
 
-  const downloadUrl = URL.createObjectURL(file.blob);
-
-  card.innerHTML = `
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2 truncate pr-2">
-        <span>📦</span>
-        <span class="font-mono text-xs text-white truncate font-medium">${file.name}</span>
-      </div>
-      <span class="text-[10px] text-slate-500 font-mono">${formatBytes(file.size)}</span>
-    </div>
-    <div class="flex items-center justify-between pt-1">
-      <span class="text-[10px] text-slate-500">${file.receivedAt.toLocaleTimeString()}</span>
-      <a href="${downloadUrl}" download="${file.name}" class="px-2.5 py-1 text-xs rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition flex items-center gap-1">
-        ⬇ Download
-      </a>
-    </div>
-  `;
-
-  receivedItemsList.prepend(card);
+  addTransmission(item);
   showToast(`Received: ${file.name} (${formatBytes(file.size)})`, 'success');
 
   // Trigger download automatically
+  const downloadUrl = URL.createObjectURL(file.blob);
   const autoAnchor = document.createElement('a');
   autoAnchor.href = downloadUrl;
   autoAnchor.download = file.name;
@@ -483,33 +666,148 @@ function handleFileReceived(file: ReceivedFile) {
 }
 
 function handleSnippetReceived(text: string) {
-  emptyReceivedPlaceholder.classList.add('hidden');
-  receivedCount++;
-  receivedCountBadge.textContent = receivedCount.toString();
+  const item: TransmissionItem = {
+    id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    type: 'message-received',
+    text,
+    timestamp: Date.now(),
+  };
+
+  addTransmission(item);
+  showToast('Received text message!', 'info');
+}
+
+// ----------------------------------------------------
+// Transmissions History Management
+// ----------------------------------------------------
+
+function addTransmission(item: TransmissionItem, persist = true) {
+  emptyTransmissionsPlaceholder.classList.add('hidden');
+  transmissions.unshift(item);
+  transmissionsCountBadge.textContent = transmissions.length.toString();
 
   const card = document.createElement('div');
-  card.className = 'p-3 rounded-xl bg-[#0d1117] border border-cyan-900/50 space-y-2';
+  const dateStr = new Date(item.timestamp).toLocaleTimeString();
 
-  card.innerHTML = `
-    <div class="flex items-center justify-between text-xs text-cyan-400 font-semibold">
-      <span>📋 Text Snippet</span>
-      <span class="text-[10px] text-slate-500">${new Date().toLocaleTimeString()}</span>
-    </div>
-    <pre class="p-2 rounded bg-black/40 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap select-all max-h-32">${escapeHtml(text)}</pre>
-    <div class="flex justify-end">
-      <button class="btn-copy-snippet px-2 py-0.5 text-xs text-slate-300 hover:text-white bg-slate-800 rounded border border-slate-700 transition">
-        Copy
-      </button>
-    </div>
-  `;
+  if (item.type === 'file-received') {
+    card.className = 'p-3 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-2';
+    card.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2 truncate pr-2">
+          <span>📦</span>
+          <span class="font-mono text-xs text-white truncate font-medium">${escapeHtml(item.name || 'File')}</span>
+        </div>
+        <span class="text-[10px] text-slate-500 font-mono">${formatBytes(item.size || 0)}</span>
+      </div>
+      <div class="flex items-center justify-between pt-1">
+        <span class="text-[10px] text-slate-500">${dateStr}</span>
+        <button class="btn-download-file px-2.5 py-1 text-xs rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition flex items-center gap-1">
+          ⬇ Download
+        </button>
+      </div>
+    `;
 
-  card.querySelector('.btn-copy-snippet')?.addEventListener('click', () => {
-    navigator.clipboard.writeText(text);
-    showToast('Snippet copied to clipboard!', 'success');
-  });
+    card.querySelector('.btn-download-file')?.addEventListener('click', async () => {
+      let blob = activeBlobs.get(item.id);
+      if (!blob) {
+        blob = (await getFileBlob(item.id)) || undefined;
+        if (blob) activeBlobs.set(item.id, blob);
+      }
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.name || 'download';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } else {
+        showToast('File data expired from local memory', 'error');
+      }
+    });
+  } else if (item.type === 'file-sent') {
+    card.className = 'p-3 rounded-xl bg-[#0d1117] border border-cyan-950/60 space-y-2';
+    card.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2 truncate pr-2">
+          <span>📤</span>
+          <span class="font-mono text-xs text-white truncate font-medium">${escapeHtml(item.name || 'File')}</span>
+        </div>
+        <span class="text-[10px] text-slate-500 font-mono">${formatBytes(item.size || 0)}</span>
+      </div>
+      <div class="flex items-center justify-between pt-1">
+        <span class="text-[10px] text-slate-500">${dateStr}</span>
+        <span class="text-[11px] font-semibold text-cyan-400 flex items-center gap-1">
+          ✓ Sent File
+        </span>
+      </div>
+    `;
+  } else if (item.type === 'message-received') {
+    card.className = 'p-3 rounded-xl bg-[#0d1117] border border-cyan-900/50 space-y-2';
+    card.innerHTML = `
+      <div class="flex items-center justify-between text-xs text-cyan-400 font-semibold">
+        <span class="flex items-center gap-1">💬 Received Message</span>
+        <span class="text-[10px] text-slate-500">${dateStr}</span>
+      </div>
+      <pre class="p-2 rounded bg-black/40 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap select-all max-h-32">${escapeHtml(item.text || '')}</pre>
+      <div class="flex justify-end">
+        <button class="btn-copy-snippet px-2 py-0.5 text-xs text-slate-300 hover:text-white bg-slate-800 rounded border border-slate-700 transition">
+          Copy
+        </button>
+      </div>
+    `;
 
-  receivedItemsList.prepend(card);
-  showToast('Received text snippet!', 'info');
+    card.querySelector('.btn-copy-snippet')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(item.text || '');
+      showToast('Message copied to clipboard!', 'success');
+    });
+  } else if (item.type === 'message-sent') {
+    card.className = 'p-3 rounded-xl bg-[#0d1117] border border-slate-800 space-y-2';
+    card.innerHTML = `
+      <div class="flex items-center justify-between text-xs text-emerald-400 font-semibold">
+        <span class="flex items-center gap-1">💬 Sent Message</span>
+        <span class="text-[10px] text-slate-500">${dateStr}</span>
+      </div>
+      <pre class="p-2 rounded bg-black/40 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap select-all max-h-32">${escapeHtml(item.text || '')}</pre>
+      <div class="flex items-center justify-between pt-1">
+        <span class="text-[11px] text-slate-500 font-medium">✓ Sent</span>
+        <button class="btn-copy-snippet px-2 py-0.5 text-xs text-slate-300 hover:text-white bg-slate-800 rounded border border-slate-700 transition">
+          Copy
+        </button>
+      </div>
+    `;
+
+    card.querySelector('.btn-copy-snippet')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(item.text || '');
+      showToast('Message copied to clipboard!', 'success');
+    });
+  }
+
+  transmissionsItemsList.prepend(card);
+
+  if (persist) {
+    sessionStorage.setItem(STORAGE_TRANSMISSIONS_KEY, JSON.stringify(transmissions));
+  }
+}
+
+function loadStoredTransmissions() {
+  const raw = sessionStorage.getItem(STORAGE_TRANSMISSIONS_KEY);
+  if (!raw) return;
+  try {
+    const list: TransmissionItem[] = JSON.parse(raw);
+    if (Array.isArray(list)) {
+      transmissionsItemsList.innerHTML = '';
+      transmissionsItemsList.appendChild(emptyTransmissionsPlaceholder);
+      transmissions = [];
+      // Render in reverse to maintain chronological order
+      for (let i = list.length - 1; i >= 0; i--) {
+        addTransmission(list[i], false);
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load stored transmissions:', err);
+  }
 }
 
 function escapeHtml(str: string): string {
@@ -518,12 +816,16 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
-btnClearHistory.addEventListener('click', () => {
-  receivedItemsList.innerHTML = '';
-  receivedItemsList.appendChild(emptyReceivedPlaceholder);
-  emptyReceivedPlaceholder.classList.remove('hidden');
-  receivedCount = 0;
-  receivedCountBadge.textContent = '0';
+btnClearHistory.addEventListener('click', async () => {
+  transmissionsItemsList.innerHTML = '';
+  transmissionsItemsList.appendChild(emptyTransmissionsPlaceholder);
+  emptyTransmissionsPlaceholder.classList.remove('hidden');
+  transmissions = [];
+  transmissionsCountBadge.textContent = '0';
+  sessionStorage.removeItem(STORAGE_TRANSMISSIONS_KEY);
+  activeBlobs.clear();
+  await clearAllFileBlobs();
+  showToast('Transmission history cleared', 'info');
 });
 
 // Snippet Sending
@@ -539,12 +841,22 @@ btnPasteClipboard.addEventListener('click', async () => {
 btnSendSnippet.addEventListener('click', () => {
   const text = snippetInput.value.trim();
   if (!text) {
-    showToast('Snippet text is empty', 'error');
+    showToast('Message text is empty', 'error');
     return;
   }
   const ok = rtc.sendSnippet(text);
   if (ok) {
     snippetInput.value = '';
-    showToast('Snippet sent successfully!', 'success');
+    const sentItem: TransmissionItem = {
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      type: 'message-sent',
+      text,
+      timestamp: Date.now(),
+    };
+    addTransmission(sentItem);
+    showToast('Message sent successfully!', 'success');
   }
 });
+
+// Run session restoration check on page load
+tryRestoreSessionOnRefresh();

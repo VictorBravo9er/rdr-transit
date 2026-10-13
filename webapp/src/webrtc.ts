@@ -9,7 +9,7 @@ import {
 } from './protocol';
 import { compressSdp, decompressSdp } from './sdp_compress';
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'failed';
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
 
 export interface ReceivedFile {
   id: string;
@@ -35,6 +35,7 @@ export interface WebRTCEvents {
   onReceiveProgress: (progress: ProgressInfo) => void;
   onFileReceived: (file: ReceivedFile) => void;
   onSnippetReceived: (snippet: string) => void;
+  onSessionSync?: (sessionId: string) => void;
   onError: (error: string) => void;
 }
 
@@ -42,6 +43,12 @@ export class WebRTCManager {
   private pc: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   private events: WebRTCEvents;
+
+  // Session & persistence state
+  private sessionId: string | null = null;
+  private role: 'host' | 'joiner' | null = null;
+  private isReconnecting = false;
+  private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   // Receiving state
   private currentIncomingFile: FileHeaderMessage | null = null;
@@ -61,8 +68,18 @@ export class WebRTCManager {
   }
 
   private createPeerConnection(): RTCPeerConnection {
+    // Quietly cleanup previous connection without triggering 'disconnected' event
+    if (this.dataChannel) {
+      try {
+        this.dataChannel.close();
+      } catch {}
+      this.dataChannel = null;
+    }
     if (this.pc) {
-      this.close();
+      try {
+        this.pc.close();
+      } catch {}
+      this.pc = null;
     }
 
     const config: RTCConfiguration = {
@@ -77,11 +94,24 @@ export class WebRTCManager {
 
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        if (this.reconnectTimeoutId) {
+          clearTimeout(this.reconnectTimeoutId);
+          this.reconnectTimeoutId = null;
+        }
+        this.isReconnecting = false;
         this.events.onStatusChange('connected', 'Direct Peer-to-Peer Link Active');
       } else if (pc.iceConnectionState === 'failed') {
-        this.events.onStatusChange('failed', 'Direct P2P connection failed');
+        if (this.sessionId && !this.isReconnecting) {
+          this.startReconnecting('Direct link interrupted. Reconnecting to peer...');
+        } else if (!this.sessionId) {
+          this.events.onStatusChange('failed', 'Direct P2P connection failed');
+        }
       } else if (pc.iceConnectionState === 'disconnected') {
-        this.events.onStatusChange('disconnected', 'Peer disconnected');
+        if (this.sessionId && !this.isReconnecting) {
+          this.startReconnecting('Peer temporarily disconnected. Waiting for reconnect...');
+        } else if (!this.sessionId) {
+          this.events.onStatusChange('disconnected', 'Peer disconnected');
+        }
       }
     };
 
@@ -94,11 +124,25 @@ export class WebRTCManager {
     channel.bufferedAmountLowThreshold = BUFFERED_AMOUNT_LOW_THRESHOLD;
 
     channel.onopen = () => {
+      if (this.reconnectTimeoutId) {
+        clearTimeout(this.reconnectTimeoutId);
+        this.reconnectTimeoutId = null;
+      }
+      this.isReconnecting = false;
       this.events.onStatusChange('connected', 'DataChannel Ready for File Transmission');
+
+      // If host has an established sessionId, sync it with joiner
+      if (this.role === 'host' && this.sessionId) {
+        this.sendSessionSync(this.sessionId);
+      }
     };
 
     channel.onclose = () => {
-      this.events.onStatusChange('disconnected', 'DataChannel closed');
+      if (this.sessionId && !this.isReconnecting) {
+        this.startReconnecting('Peer disconnected. Waiting for peer...');
+      } else if (!this.sessionId) {
+        this.events.onStatusChange('disconnected', 'DataChannel closed');
+      }
     };
 
     channel.onerror = (err) => {
@@ -117,6 +161,7 @@ export class WebRTCManager {
    * Generates an Offer token to share with the peer.
    */
   async createOfferToken(): Promise<string> {
+    this.role = 'host';
     const pc = this.createPeerConnection();
     this.events.onStatusChange('connecting', 'Gathering network addresses...');
 
@@ -139,6 +184,7 @@ export class WebRTCManager {
    * Accepts an Offer token and creates an Answer token.
    */
   async acceptOfferAndCreateAnswerToken(offerToken: string): Promise<string> {
+    this.role = 'joiner';
     const pc = this.createPeerConnection();
     this.events.onStatusChange('connecting', 'Connecting to host offer...');
 
@@ -202,6 +248,50 @@ export class WebRTCManager {
         resolve();
       }, 1500);
     });
+  }
+
+  /**
+   * Enters the reconnecting state with a grace timer.
+   */
+  startReconnecting(message = 'Connection lost. Reconnecting to peer...'): void {
+    if (this.isReconnecting) return;
+    this.isReconnecting = true;
+    this.events.onStatusChange('reconnecting', message);
+
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+    }
+
+    // Grace period before completely marking as disconnected (25 seconds)
+    this.reconnectTimeoutId = setTimeout(() => {
+      if (this.isReconnecting) {
+        this.isReconnecting = false;
+        this.sessionId = null;
+        this.close();
+      }
+    }, 25000);
+  }
+
+  /**
+   * Send session synchronization message over DataChannel.
+   */
+  sendSessionSync(sessionId: string): void {
+    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+      try {
+        this.dataChannel.send(JSON.stringify({ type: 'session_sync', sessionId }));
+      } catch {}
+    }
+  }
+
+  /**
+   * Send explicit disconnect message to peer.
+   */
+  sendDisconnect(): void {
+    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+      try {
+        this.dataChannel.send(JSON.stringify({ type: 'disconnect' }));
+      } catch {}
+    }
   }
 
   /**
@@ -387,6 +477,20 @@ export class WebRTCManager {
           }
         } else if (msg.type === 'snippet') {
           this.events.onSnippetReceived(msg.text);
+        } else if (msg.type === 'session_sync') {
+          this.sessionId = msg.sessionId;
+          if (this.events.onSessionSync) {
+            this.events.onSessionSync(msg.sessionId);
+          }
+        } else if (msg.type === 'disconnect') {
+          if (this.reconnectTimeoutId) {
+            clearTimeout(this.reconnectTimeoutId);
+            this.reconnectTimeoutId = null;
+          }
+          this.isReconnecting = false;
+          this.sessionId = null;
+          this.role = null;
+          this.close(true);
         } else if (msg.type === 'cancel') {
           this.currentIncomingFile = null;
           this.incomingChunks = [];
@@ -425,7 +529,16 @@ export class WebRTCManager {
     }
   }
 
-  close(): void {
+  close(clearSession = true): void {
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    this.isReconnecting = false;
+    if (clearSession) {
+      this.sessionId = null;
+      this.role = null;
+    }
     if (this.dataChannel) {
       try {
         this.dataChannel.close();
@@ -443,5 +556,29 @@ export class WebRTCManager {
 
   isConnected(): boolean {
     return this.dataChannel !== null && this.dataChannel.readyState === 'open';
+  }
+
+  isTransferring(): boolean {
+    return this.isSending || this.currentIncomingFile !== null;
+  }
+
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  setSessionId(id: string | null): void {
+    this.sessionId = id;
+  }
+
+  getRole(): 'host' | 'joiner' | null {
+    return this.role;
+  }
+
+  setRole(role: 'host' | 'joiner' | null): void {
+    this.role = role;
+  }
+
+  isCurrentlyReconnecting(): boolean {
+    return this.isReconnecting;
   }
 }

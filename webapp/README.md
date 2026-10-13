@@ -15,6 +15,8 @@
   - **Host** generates an encrypted connection invitation embedded into a QR code or copyable token.
   - **Joiner** points their phone/laptop camera to scan the QR code (or pastes the token) and generates an answer code.
   - Handshake completes in seconds.
+- **Unified Transmissions Feed**: Live real-time ledger tracking all sent and received files with download links, along with sent and received text snippets.
+- **Connection Persistence Across Page Refresh**: Active connections automatically persist across browser reloads (F5 / refreshes) via session storage, `BroadcastChannel`, and background reconnection signaling. Connections remain established unless an active peer tab or page is explicitly closed or disconnected.
 - **File & Snippet Support**: Send multiple files, folders, or instant clipboard text snippets.
 
 ---
