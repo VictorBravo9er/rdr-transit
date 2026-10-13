@@ -24,11 +24,6 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Unignore Flutter app source code
-!apps/**
-!apps/**/lib/
-!apps/**/lib/**
-
 # Virtual environments
 .venv/
 venv/

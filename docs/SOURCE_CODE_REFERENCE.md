@@ -30,9 +30,6 @@ src/rdr_transit/
 │   ├── app.py            # Textual nmtui-inspired terminal application
 │   ├── screens.py        # Modal dialogs, help screens, file selector widgets
 │   └── styles.tcss       # Textual CSS design specifications
-└── gui/
-    ├── __init__.py       # GUI package export
-    └── app.py            # Tkinter/ttk desktop application with thread-safe queue
 ```
 
 ---
@@ -188,19 +185,9 @@ def sanitize_destination_path(base_dir: Path, relative_folder: str, filename: st
   - Continuous discovery service runner.
   - Background batch sender worker emitting progress events back to main thread.
 
-### 7.2 Desktop GUI (`src/rdr_transit/gui/app.py`)
-- Standard library `tkinter` + `ttk` implementation:
-  - **Thread-Safe Architecture**: Background threads (`PeerDiscoveryService`, `BatchSender`, `ReceiverServer`) post events to `self.event_queue`. The main GUI thread processes the queue via `root.after(100, self._process_event_queue)`.
-  - **Tab Views**:
-    1. *Send Files*: Peer combobox, direct IP entry, file/folder picker, live progress bar, speed meter.
-    2. *Discovered Peers*: Treeview with OS icons, IP, port, last seen status, quick action buttons.
-    3. *Text Snippets*: Multiline text entry, clipboard paste, direct transmission.
-    4. *Activity & Logs*: Scrollable terminal log with "Open Downloads Folder" action.
-    5. *Settings*: Download directory picker, port inputs, parallel stream spinbox.
-
-### 7.3 CLI Entrypoint (`src/rdr_transit/cli.py`)
+### 7.2 CLI Entrypoint (`src/rdr_transit/cli.py`)
 - Configured using standard library `argparse` with subcommands:
-  - `send`, `receive`, `snippet` (alias: `clip`), `discover`, `config`, `gui`, `tui`.
+  - `send`, `receive`, `snippet` (alias: `clip`), `discover`, `config`, `tui`.
 - Leverages `rich.progress` with multi-column progress tracking:
   - `SpinnerColumn`, `TextColumn`, `BarColumn`, `TaskProgressColumn`, `DownloadColumn`, `TransferSpeedColumn`, `TimeRemainingColumn`.
 - Outputs clean ASCII/Unicode status tables on conclusion of batch transfers.

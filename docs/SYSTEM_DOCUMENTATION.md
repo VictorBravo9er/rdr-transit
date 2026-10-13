@@ -7,24 +7,21 @@
 ### Documentation Suite Navigation
 * 📘 [**System Overview & Protocols** (`docs/SYSTEM_DOCUMENTATION.md`)](file:///home/victor/antigravity/RDR-transit/docs/SYSTEM_DOCUMENTATION.md): Network topology, wire protocol, safety invariants.
 * 💻 [**Source Code Reference** (`docs/SOURCE_CODE_REFERENCE.md`)](file:///home/victor/antigravity/RDR-transit/docs/SOURCE_CODE_REFERENCE.md): Detailed module-by-module walkthrough of Python code in `src/rdr_transit/`.
-* 🎨 [**UI/UX Specification & Guide** (`docs/UI_UX_REFERENCE.md`)](file:///home/victor/antigravity/RDR-transit/docs/UI_UX_REFERENCE.md): Terminal (TUI), Desktop GUI, and Mobile interface engineering guides.
-* 📱 [**Mobile & Multiplatform Reference** (`docs/MOBILE_FLUTTER_REFERENCE.md`)](file:///home/victor/antigravity/RDR-transit/docs/MOBILE_FLUTTER_REFERENCE.md): Flutter architecture, Dart protocol sockets, Android and Apple iOS/macOS configs.
+* 🎨 [**UI/UX Specification & Guide** (`docs/UI_UX_REFERENCE.md`)](file:///home/victor/antigravity/RDR-transit/docs/UI_UX_REFERENCE.md): Terminal (TUI) interface engineering guide.
 
 ---
 
 ## 1. Executive Summary & Core Tenets
 
-**RDR Transit** is a high-performance, OS-agnostic peer-to-peer file transfer system engineered for direct local area network (LAN) communication between heterogeneous devices (Linux, Windows, macOS, Android, and iOS).
+**RDR Transit** is a high-performance, OS-agnostic peer-to-peer file transfer system engineered for direct local area network (LAN) communication between heterogeneous devices (Linux, Windows, and macOS).
 
 ### Fundamental Architectural Tenets
 1. **Zero-Configuration Discovery**: Devices announce presence and discover peers autonomously on the local subnet without external relays, cloud signaling, or user-configured IP addresses.
 2. **Wire Compatibility**: Strict adherence to the open LAN-Share binary wire protocol (`<ib` 5-byte header framing) allowing zero-friction interoperability with third-party LAN-Share tools.
 3. **Cross-Platform Path Invariance & Safety**: Path sanitization protects against path traversal attacks, enforces forbidden character escaping for Windows (`: * ? " < > |`), skips symbolic link traps, and standardizes POSIX/NT directory representations.
-4. **Multi-Frontend Coherence**: Shared protocol and transfer engines power four distinct presentation layers:
+4. **Coherent Presentation Layers**: Shared protocol and transfer engines power two streamlined presentation layers:
    - **TUI**: Keyboard-driven `nmtui`-inspired terminal user interface (Textual).
    - **CLI**: Headless, scriptable automation interface (Rich).
-   - **GUI**: Lightweight, zero-dependency desktop interface (Tkinter/ttk).
-   - **Mobile**: Unified cross-platform mobile client for Android and Apple platforms (Flutter/Dart).
 
 ---
 
@@ -134,9 +131,9 @@ UTF-8 JSON string payload:
 ```
 +-----------------------------------------------------------------------------------+
 |                                  USER INTERFACES                                  |
-|   +-------------------+  +-------------------+  +-------------------+  +--------+ |
-|   |  TUI (Textual)    |  |    CLI (Rich)     |  |   GUI (Tkinter)   |  | Flutter| |
-|   +-------------------+  +-------------------+  +-------------------+  +--------+ |
+|                 +-------------------+      +-------------------+                  |
+|                 |  TUI (Textual)    |      |    CLI (Rich)     |                  |
+|                 +-------------------+      +-------------------+                  |
 +-----------------------------------------+-----------------------------------------+
                                           |
                                           v
@@ -199,33 +196,14 @@ UTF-8 JSON string payload:
 - Built on **Textual**.
 - Responsive layout featuring an nmtui-inspired palette, live glowing beacons, staging lists, transfer meters, and keyboard shortcuts (`s` for Send, `r` for Receive, `d` for Discovery).
 
-#### 2. Graphical UI (GUI) (`src/rdr_transit/gui/`)
-- Built on Python standard **Tkinter & ttk**.
-- Thread-safe event queue (`event_queue.get_nowait()`) processing network events without stalling the GUI loop.
-- Tabbed interface: Send Files, Discovered Peers, Text Snippets, Activity Logs, and Preferences.
-
-#### 3. Command Line Interface (CLI) (`src/rdr_transit/cli.py`)
+#### 2. Command Line Interface (CLI) (`src/rdr_transit/cli.py`)
 - Commands:
   - `rdr-transit send <paths> [-t TARGET] [-j WORKERS]`
   - `rdr-transit receive [-d OUT_DIR] [-p PORT]`
   - `rdr-transit snippet "<text>" [-t TARGET]`
   - `rdr-transit discover [--timeout SECONDS]`
-  - `rdr-transit gui`
   - `rdr-transit tui`
   - `rdr-transit config [--set KEY VALUE]`
-
----
-
-### 3.3 Mobile & Multiplatform Layer (`apps/flutter_transit/`)
-
-Built with **Flutter / Dart** to target Android, iOS, and desktop operating systems from a single codebase:
-- **`lib/protocol/packets.dart`**: Complete binary packet encoder and decoder matching `<ib` framing.
-- **`lib/services/discovery_service.dart`**: `RawDatagramSocket` binding on UDP `56780` with background beacons.
-- **`lib/services/transfer_service.dart`**: TCP client/server streaming via `Socket` and `ServerSocket`.
-- **Platform Permissions**:
-  - **Android**: `CHANGE_WIFI_MULTICAST_STATE`, `INTERNET`, `WAKE_LOCK`, and media permissions in `AndroidManifest.xml`.
-  - **iOS**: `NSLocalNetworkUsageDescription` in `Info.plist`, local Bonjour services, and `UIFileSharingEnabled` to expose received files to the Apple **Files** app.
-  - **macOS**: Client and server socket sandbox entitlements in `Release.entitlements`.
 
 ---
 
@@ -235,18 +213,13 @@ When reviewing, maintaining, or modifying this codebase, the following invariant
 
 1. **Protocol Framing Invariant**:
    - The packet header is ALWAYS 5 bytes (`<ib` struct: 4-byte little-endian length + 1-byte packet type).
-   - Never alter byte order or header offset; doing so breaks compatibility with LAN-Share and existing mobile nodes.
+   - Never alter byte order or header offset; doing so breaks compatibility with LAN-Share.
 2. **Path Sanitization Invariant**:
    - Every file received over the network MUST pass through `sanitize_destination_path` before opening file descriptors.
    - Incoming relative folder paths must never resolve outside `download_dir`.
 3. **Thread Safety & UI Event Loop Invariant**:
-   - Network operations (TCP transfers, UDP discovery) must NEVER execute synchronously on UI threads (neither Textual main loop nor Tkinter event loop nor Flutter build phase).
-   - In Tkinter: Always dispatch UI updates via `event_queue` or `root.after()`.
-   - In Textual: Always use workers or `call_from_thread()`.
-   - In Flutter: Use asynchronous futures, streams, or `ChangeNotifier`.
-4. **Git & Build System Isolation Invariant**:
-   - The Flutter `apps/flutter_transit/lib/` directory contains critical source code and must never be blocked by `.gitignore`.
-   - Only root build outputs (`/build/`, `/lib/`) belong in `.gitignore`.
+   - Network operations (TCP transfers, UDP discovery) must NEVER execute synchronously on the UI thread.
+   - In Textual: Always use asynchronous workers (`@work(exclusive=True)`) or `call_from_thread()`.
 
 ---
 
@@ -254,7 +227,7 @@ When reviewing, maintaining, or modifying this codebase, the following invariant
 
 ### Test Suite Execution
 ```bash
-# Run complete test suite (unit, integration, protocol, filesystem, GUI)
+# Run complete test suite (unit, integration, protocol, filesystem, TUI)
 uv run pytest
 
 # Run with verbose output
@@ -265,5 +238,6 @@ uv run pytest -v
 - `tests/test_protocol.py`: Verifies packet header encoding, payload decoding, and struct sizes.
 - `tests/test_filesystem.py`: Tests path sanitization, Windows character stripping, and directory exclusion filters.
 - `tests/test_transfer.py`: Runs loopback TCP transfers verifying chunk streaming and checksum validations.
-- `tests/test_gui.py`: Tests Tkinter headless initialization, event queues, and state handlers.
+- `tests/test_settings.py`: Tests AppConfig serialization, deserialization, and filesystem defaults.
+- `tests/test_cli.py`: Tests CLI argument parsing, flags, and subcommand dispatching.
 - `tests/test_tui.py`: Tests Textual TUI mounting and widget interactions.

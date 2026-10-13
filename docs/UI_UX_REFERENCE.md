@@ -1,21 +1,19 @@
 # RDR-Transit: UI/UX Specification & Interface Engineering Guide
 
 > **Target Audience:** Frontend Engineers, UI/UX Designers, Autonomous Agents  
-> **Scope:** Terminal User Interface (Textual TUI), Desktop GUI (Tkinter/ttk), and Mobile/Multiplatform Client (Flutter Material 3).  
+> **Scope:** Terminal User Interface (Textual TUI).  
 > **Status:** Canonical Living Interface Reference
 
 ---
 
 ## 1. Design System & Visual Philosophy
 
-RDR-Transit provides three complementary user interfaces tailored to different operational environments:
-1. **Terminal User Interface (TUI)**: Keyboard-centric, `nmtui`-inspired, full-screen console client for SSH sessions, headless servers, and terminal power users.
-2. **Desktop Graphical User Interface (GUI)**: Lightweight, zero-external-dependency desktop client for Linux, Windows, and macOS desktops.
-3. **Mobile & Multiplatform Client**: Modern, touch-first Material 3 application for Android smartphones, tablets, iPhones, iPads, and MacBooks.
+RDR-Transit provides a focused, high-performance user interface:
+- **Terminal User Interface (TUI)**: Keyboard-centric, `nmtui`-inspired, full-screen console client for SSH sessions, headless servers, and terminal power users.
 
 ### 1.1 Unified Color Palette & Semantics
 
-All three interfaces adhere to a cohesive **Cyber-Dark** design language featuring high-contrast neon accents against deep blue-black backgrounds:
+The terminal interface adheres to a cohesive **Cyber-Dark** design language featuring high-contrast accents against deep blue-black backgrounds:
 
 | Semantic Role | Hex Code | Visual Swatch | Purpose / Usage |
 | :--- | :--- | :--- | :--- |
@@ -92,160 +90,31 @@ The TUI utilizes reactive `ModalScreen` overlays with darkened backdrops:
 
 ---
 
-## 3. Desktop Graphical User Interface (GUI)
+## 3. End-to-End User Interaction Flowcharts
 
-Implemented in [`src/rdr_transit/gui/app.py`](file:///home/victor/antigravity/RDR-transit/src/rdr_transit/gui/app.py).
-
-### 3.1 Architectural Concurrency & Thread-Safe UI Pipeline
-
-Tkinter requires all UI widget manipulations to execute on the main thread. Network operations (UDP beaconing and TCP multi-stream chunking) run on background threads and stream events through a thread-safe `queue.Queue`:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as User Action
-    participant GUI as Tkinter Main Thread
-    participant Queue as Thread-Safe Event Queue
-    participant Sender as BatchSender (Worker Threads)
-    participant Receiver as ReceiverServer (TCP Daemon)
-    participant Discovery as PeerDiscoveryService (UDP)
-
-    User->>GUI: Click [⚡ Send All to Peer]
-    GUI->>Sender: Spawn threading.Thread(_worker)
-    loop File Streaming (96 KB Chunks)
-        Sender->>Queue: put(("send_progress", stats))
-        GUI->>Queue: Polls via root.after(100ms)
-        Queue-->>GUI: Returns stats
-        GUI->>GUI: Update Progressbar & MB/s Meter
-    end
-    Sender->>Queue: put(("send_completed", final_stats))
-    Queue-->>GUI: Show Completion Dialog
-```
-
-### 3.2 Tabbed Architecture & Feature Matrix
-
-The desktop GUI organizes functionality into 5 dedicated tabs:
-
-```
-+-------------------------------------------------------------------------------------------------+
-| ⚡ RDR Transit  v0.1.0                                                ● Receiver Active [Stop]  |
-| Device: workstation (Linux) | Local IP: 192.168.1.100:17116                                     |
-+-------------------------------------------------------------------------------------------------+
-| [ 🚀 Send Files ] [ 📡 Discovered Peers ] [ 📋 Text Snippet ] [ 📥 Activity & Logs ] [ ⚙️ Config] |
-+-------------------------------------------------------------------------------------------------+
-```
-
-#### Tab 1: 🚀 Send Files
-- **Target Peer Selector**: Combobox showing all active discovered peers + manual IP entry input.
-- **Item Staging Table**: `Treeview` showing full path and formatted size (`format_size()`).
-- **File & Folder Pickers**: OS-native file dialogs (`filedialog.askopenfilenames`, `filedialog.askdirectory`).
-- **Progress Panel**:
-  - Continuous `ttk.Progressbar` (0–100%).
-  - Live status line: Displays filename currently streaming, active stream count, and percentage.
-  - Live throughput counter: Real-time speed formatted in `MB/s`.
-  - **Cancel Transfer** button: Immediately signals `BatchSender.cancel()`.
-
-#### Tab 2: 📡 Discovered Peers
-- **Real-Time Grid**: Lists Device Name, OS Badge, IP Address, Port, and Liveness Status.
-- **Action Toolbar**:
-  - `🔄 Discover Now`: Force-broadcasts an announcement beacon immediately.
-  - `🚀 Send Files to Selected`: Auto-populates destination IP and switches to the Send tab.
-  - `📋 Send Snippet to Selected`: Switches to the Snippet tab with the peer pre-selected.
-
-#### Tab 3: 📋 Text Snippet
-- Instant text and code sharing without creating temporary files.
-- **Paste from Clipboard** button: Reads local OS clipboard directly into the text editor.
-- **Monospace Text Editor**: Suitable for code snippets, JSON payloads, URLs, or authentication tokens.
-
-#### Tab 4: 📥 Activity & Logs
-- Dark terminal activity log displaying real-time events:
-  - Timestamped receipts: `[14:22:01] 📥 Receiving from 192.168.1.120: model.weights (450 MB)`
-  - Checksum validations: `[14:22:05] ✓ Saved: /home/victor/Downloads/RDR-Transit/model.weights`
-  - Incremental skips: `[14:22:06] ⚡ Skipped identical file: config.json`
-- **📁 Open Downloads Folder** button: Launches native OS file manager (`xdg-open` on Linux, `open` on macOS, `explorer` on Windows).
-
-#### Tab 5: ⚙️ Settings
-- Graphical form allowing persistent modification of `~/.config/rdr-transit/config.json`:
-  - Download folder browser.
-  - Transfer port (TCP, default `17116`).
-  - Discovery broadcast port (UDP, default `56780`).
-  - Parallel transmission worker count (1–16 threads).
-  - Beacon broadcast interval (1.0–30.0s).
-
----
-
-## 4. Mobile & Multiplatform Client (Flutter / Material 3)
-
-Implemented in [`apps/flutter_transit/lib/main.dart`](file:///home/victor/antigravity/RDR-transit/apps/flutter_transit/lib/main.dart).
-
-### 4.1 Touch-First Material 3 Architecture
-
-The Flutter client provides an adaptive layout suitable for handheld smartphones, foldables, tablets, and desktop displays:
-
-```
-+----------------------------------------------------+
-| ⚡ RDR Transit                 [ ● Receiver On ]   |
-+----------------------------------------------------+
-|                                                    |
-|  Nearby Devices (3)                     [ Scan 🔄 ]|
-|  +-----------------------------------------------+ |
-|  | (🍎) MacBook Pro                              | |
-|  |     192.168.1.42:17116 • Apple                | |
-|  |                              [ 🚀 Send ] [ 📋 ]| |
-|  +-----------------------------------------------+ |
-|  | (🤖) Pixel 8                                  | |
-|  |     192.168.1.88:17116 • Android              | |
-|  |                              [ 🚀 Send ] [ 📋 ]| |
-|  +-----------------------------------------------+ |
-|  | (💻) Linux Workstation                        | |
-|  |     192.168.1.100:17116 • Linux               | |
-|  |                              [ 🚀 Send ] [ 📋 ]| |
-|  +-----------------------------------------------+ |
-|                                                    |
-+----------------------------------------------------+
-|  [ 📡 Peers ]   [ 🚀 Send ]   [ 📥 Receive ]  [ 📋 ] |
-+----------------------------------------------------+
-```
-
-### 4.2 Mobile-Specific Platform Integrations
-
-1. **Apple iOS Files App Integration**:
-   - Enabled via `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` in `Info.plist`.
-   - Any file received over the network is saved to the app's sandboxed document directory and immediately visible in the **Apple Files** app under *"On My iPhone > RDR Transit"*.
-2. **Android Multicast Lock & Storage**:
-   - Configured with `CHANGE_WIFI_MULTICAST_STATE` to ensure UDP discovery datagrams pass through battery-saver Wi-Fi filtering.
-   - Employs native document and photo pickers (`file_picker`) supporting Android 13+ Photo Picker and scoped storage.
-3. **Reactive UI State Flow**:
-   - Built on Dart `ChangeNotifier` (`DiscoveryService` and `TransferService`).
-   - Sockets run non-blocking on the Dart event loop without locking the 60/120fps UI rendering thread.
-
----
-
-## 5. End-to-End User Interaction Flowcharts
-
-### 5.1 File Staging, Peer Discovery & Transfer Flow
+### 3.1 File Staging, Peer Discovery & Transfer Flow
 
 ```mermaid
 flowchart TD
-    Start([User Opens RDR-Transit]) --> Disc[UDP 56780 Background Discovery]
+    Start([User Opens RDR-Transit TUI]) --> Disc[UDP 56780 Background Discovery]
     Disc --> PeerFound{Peer Detected?}
-    PeerFound -- Yes --> ShowPeer[Display in Peer Grid / Table]
+    PeerFound -- Yes --> ShowPeer[Display in Peer Table]
     PeerFound -- No --> DirectIP[Enter Direct IP Address]
     
-    ShowPeer --> StageFiles[Stage Files / Folders via Picker]
+    ShowPeer --> StageFiles[Stage Files / Folders via Modal (a)]
     DirectIP --> StageFiles
     
-    StageFiles --> ClickSend[Click Send Button]
+    StageFiles --> ClickSend[Trigger Send Action (s)]
     ClickSend --> ConnCheck{Connect TCP 17116}
     
-    ConnCheck -- Failed --> ErrToast[Display Error Toast / Retry]
+    ConnCheck -- Failed --> ErrToast[Display Error Toast / Notification]
     ConnCheck -- Success --> SendHdr[Send 5-byte Header + JSON Preamble]
     
     SendHdr --> RecvReply{Receiver Response}
     RecvReply -- SKIP --> SkipFile[Mark File Skipped: Identical Content]
     RecvReply -- OK --> StreamChunks[Stream 96 KB Data Packets]
     
-    StreamChunks --> Meter[Update Progress Bar & MB/s Meter]
+    StreamChunks --> Meter[Update Dual Progress Meters]
     Meter --> MoreBytes{More Bytes?}
     MoreBytes -- Yes --> StreamChunks
     MoreBytes -- No --> SendFinish[Send Finish Packet]
@@ -256,7 +125,7 @@ flowchart TD
     BatchDone -- No --> Summary[Display Transfer Summary]
 ```
 
-### 5.2 Receiver Daemon Handshake & Storage Flow
+### 3.2 Receiver Daemon Handshake & Storage Flow
 
 ```mermaid
 flowchart TD
@@ -287,16 +156,14 @@ flowchart TD
 
 ---
 
-## 6. UI Performance & Accessibility Invariants
+## 4. UI Performance & Accessibility Invariants
 
-To guarantee a responsive user experience across all three UI frontends:
+To guarantee a responsive user experience in the terminal interface:
 
-1. **60 FPS / Non-Blocking Invariant**:
-   - Sockets and heavy filesystem hashes must NEVER execute on the UI rendering thread.
+1. **Non-Blocking Invariant**:
+   - Sockets and heavy filesystem operations must NEVER execute on the Textual main thread.
+   - Use asynchronous Textual workers (`@work(exclusive=True)`) or daemon threads for transfers.
 2. **Terminal Graceful Resizing**:
    - The TUI layout uses flexible fractions (`1fr`) and percentages (`50%`) so resizing the terminal window never crashes Textual or clips buttons.
-3. **High-DPI & Scale Agnosticism**:
-   - The Tkinter GUI uses `ttk` geometry managers (`grid`, `pack`) with scalable font definitions.
-   - Flutter leverages vector icons (`Icons.*`) and scalable Material 3 density tokens.
-4. **Instant Visual Feedback**:
-   - Every network action (scanning, sending, canceling) produces immediate visual feedback within $< 50\text{ms}$ (button state change, progress indicator, or status message).
+3. **Instant Visual Feedback**:
+   - Every network action (scanning, sending, canceling) produces immediate visual feedback within $< 50\text{ms}$ (status beacon change, progress bar update, or notification toast).
