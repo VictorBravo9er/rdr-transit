@@ -310,7 +310,7 @@ class _MainScreenState extends State<MainScreen> {
                         return ListTile(
                           dense: true,
                           title: Text(f.name, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(_formatBytes(f.size)),
+                          subtitle: Text(_formatBytes(f.lengthSync() ?? 0)),
                           trailing: IconButton(
                             icon: const Icon(Icons.close, size: 18),
                             onPressed: () => setState(() => _stagedFiles.removeAt(i)),
@@ -504,10 +504,10 @@ class _MainScreenState extends State<MainScreen> {
 
   // --- ACTIONS ---
   Future<void> _pickFiles() async {
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-    if (result != null) {
+    final files = await FilePicker.pickFiles();
+    if (files.isNotEmpty) {
       setState(() {
-        _stagedFiles.addAll(result.files);
+        _stagedFiles.addAll(files);
       });
     }
   }

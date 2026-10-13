@@ -5,8 +5,8 @@
 import FlutterMacOS
 import Foundation
 
-import share_plus
+import file_picker_darwin
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  SharePlusMacosPlugin.register(with: registry.registrar(forPlugin: "SharePlusMacosPlugin"))
+  FilePickerPlugin.register(with: registry.registrar(forPlugin: "FilePickerPlugin"))
 }
