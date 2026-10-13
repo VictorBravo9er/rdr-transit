@@ -39,3 +39,21 @@ pnpm build
 ```
 
 The production output will be generated in `webapp/dist/`, which includes the pre-configured Service Worker (`dist/sw.js`) and precache manifest. It is completely static and ready to be deployed to any static host.
+
+---
+
+## Deploying to GitHub Pages
+
+The repository includes an automated GitHub Actions deployment workflow at [`.github/workflows/deploy-webapp.yml`](file:///.github/workflows/deploy-webapp.yml).
+
+### 1. Enable GitHub Actions for Pages
+1. Go to your repository on GitHub: `https://github.com/VictorBravo9er/rdr-transit/settings/pages`.
+2. Under **Build and deployment** > **Source**, select **GitHub Actions**.
+
+### 2. Trigger Deployment
+- **Automatic**: Any push to `main` modifying files under `webapp/` will automatically build and deploy the webapp.
+- **Manual**: Navigate to **Actions** > **Deploy Webapp to GitHub Pages** > **Run workflow**.
+
+Once deployed, the web application will be live at:
+`https://victorbravo9er.github.io/rdr-transit/`
+
