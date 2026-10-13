@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RDR Transit | Client-Side LAN P2P File Transfer</title>
+  </head>
+  <body class="min-h-screen bg-[#0d1117] text-[#c9d1d9] flex flex-col">
+    <!-- Navigation Bar -->
+    <header class="border-b border-[#30363d] bg-[#161b22]/80 backdrop-blur sticky top-0 z-40">
+      <div class="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-cyan-500/20">
+            ⚡
+          </div>
+          <div>
+            <h1 class="font-bold text-lg text-white tracking-wide flex items-center gap-2">
+              RDR TRANSIT <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800">WEB P2P</span>
+            </h1>
+            <p class="text-xs text-slate-400">100% Client-Side LAN & Direct File Sharing</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div id="connection-status-pill" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+            <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
+            <span id="connection-status-text">Disconnected</span>
+          </div>
+          <button id="btn-disconnect" class="hidden px-2.5 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded border border-rose-900 transition">
+            Disconnect
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
+      <!-- TOAST CONTAINER -->
+      <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+      <!-- VIEW 1: PAIRING & CONNECTION (Shown when disconnected) -->
+      <section id="view-pairing" class="space-y-6">
+        <div class="text-center max-w-xl mx-auto space-y-2 mb-8">
+          <h2 class="text-2xl font-bold text-white">Direct Machine-to-Machine Link</h2>
+          <p class="text-sm text-slate-400">
+            Zero servers. Connect two browsers on the same Wi-Fi network via an encrypted WebRTC data channel. Scan the QR code or exchange tokens to connect.
+          </p>
+        </div>
+
+        <!-- Pairing Mode Tabs -->
+        <div class="max-w-2xl mx-auto bg-[#161b22] border border-[#30363d] rounded-2xl overflow-hidden shadow-xl">
+          <div class="flex border-b border-[#30363d] bg-[#0d1117]/60">
+            <button id="tab-btn-host" class="flex-1 py-3 text-sm font-semibold text-cyan-400 border-b-2 border-cyan-400 bg-[#161b22] transition">
+              1. Host / Create Link
+            </button>
+            <button id="tab-btn-join" class="flex-1 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent transition">
+              2. Join / Scan QR
+            </button>
+          </div>
+
+          <!-- TAB CONTENT: HOST -->
+          <div id="tab-content-host" class="p-6 space-y-6">
+            <div id="host-initial-step" class="text-center py-6 space-y-4">
+              <div class="w-16 h-16 mx-auto rounded-2xl bg-cyan-950 border border-cyan-800 flex items-center justify-center text-cyan-400 text-3xl">
+                📡
+              </div>
+              <div>
+                <h3 class="font-semibold text-white">Generate Connection Invitation</h3>
+                <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  Creates an encrypted WebRTC invitation code with your local network address embedded.
+                </p>
+              </div>
+              <button id="btn-create-offer" class="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-cyan-500/25">
+                Generate Pairing Code
+              </button>
+            </div>
+
+            <div id="host-qr-step" class="hidden space-y-6">
+              <div class="flex flex-col items-center gap-4">
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Step 1: Scan this QR code on your second device
+                </p>
+                <div class="p-4 bg-white rounded-2xl shadow-xl flex items-center justify-center">
+                  <canvas id="host-qr-canvas" class="max-w-full"></canvas>
+                </div>
+                <div class="flex gap-2 w-full max-w-md">
+                  <input id="host-offer-token-input" type="text" readonly class="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-slate-400 font-mono truncate" />
+                  <button id="btn-copy-offer-token" class="px-3 py-1.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition">
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              <div class="border-t border-[#30363d] pt-6 space-y-3">
+                <p class="text-xs font-semibold uppercase tracking-wider text-cyan-400">
+                  Step 2: Complete the handshake
+                </p>
+                <p class="text-xs text-slate-400">
+                  After scanning on the second device, it will display an <b>Answer Code</b>. Paste it below or scan it using your webcam.
+                </p>
+                <div class="flex gap-2">
+                  <input id="host-answer-input" type="text" placeholder="Paste peer Answer token here..." class="flex-1 px-3 py-2 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-cyan-500 focus:outline-none" />
+                  <button id="btn-submit-answer" class="px-4 py-2 text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg transition">
+                    Connect
+                  </button>
+                  <button id="btn-scan-answer-camera" class="px-3 py-2 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition flex items-center gap-1" title="Scan with webcam">
+                    📷 Scan
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB CONTENT: JOIN -->
+          <div id="tab-content-join" class="hidden p-6 space-y-6">
+            <div class="space-y-4">
+              <div class="text-center py-4 space-y-3">
+                <button id="btn-open-scanner" class="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 mx-auto">
+                  📷 Scan Host QR Code (Camera)
+                </button>
+                <p class="text-xs text-slate-500">Or paste the host invitation token manually below</p>
+              </div>
+
+              <!-- Manual token paste -->
+              <div class="space-y-2">
+                <label class="block text-xs font-medium text-slate-400">Paste Host Offer Token:</label>
+                <textarea id="join-offer-input" rows="3" placeholder="Paste the token copied from the host device..." class="w-full px-3 py-2 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-emerald-500 focus:outline-none resize-none"></textarea>
+                <button id="btn-process-offer" class="w-full py-2.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-bold rounded-lg border border-[#30363d] transition">
+                  Process Offer & Generate Answer
+                </button>
+              </div>
+
+              <!-- Answer QR display -->
+              <div id="join-answer-step" class="hidden border-t border-[#30363d] pt-6 space-y-4 text-center">
+                <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                  Show this Answer QR code to the Host device
+                </p>
+                <div class="p-4 bg-white rounded-2xl shadow-xl inline-block mx-auto">
+                  <canvas id="join-qr-canvas"></canvas>
+                </div>
+                <div class="flex gap-2 max-w-md mx-auto">
+                  <input id="join-answer-token-input" type="text" readonly class="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-slate-400 font-mono truncate" />
+                  <button id="btn-copy-answer-token" class="px-3 py-1.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition">
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: ACTIVE TRANSFER DASHBOARD (Shown when connected) -->
+      <section id="view-dashboard" class="hidden space-y-6">
+        <!-- Connected Banner -->
+        <div class="p-4 rounded-xl bg-cyan-950/40 border border-cyan-800/80 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></span>
+            <div>
+              <p class="font-bold text-sm text-cyan-200">Direct P2P Link Established</p>
+              <p class="text-xs text-slate-400">Ready for instant LAN transfer at maximum Wi-Fi throughput</p>
+            </div>
+          </div>
+          <div class="text-xs font-mono text-cyan-400 px-2.5 py-1 rounded bg-cyan-900/50 border border-cyan-700/50">
+            WebRTC DataChannel Active
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- LEFT 2 COLUMNS: SENDER & TRANSFER CONTROLS -->
+          <div class="lg:col-span-2 space-y-6">
+            <!-- Mode Switcher (Files vs Snippet) -->
+            <div class="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 space-y-6 shadow-xl">
+              <div class="flex items-center justify-between border-b border-[#30363d] pb-4">
+                <div class="flex gap-4">
+                  <button id="mode-btn-files" class="text-sm font-bold text-cyan-400 border-b-2 border-cyan-400 pb-1 transition">
+                    📁 Send Files
+                  </button>
+                  <button id="mode-btn-snippet" class="text-sm font-medium text-slate-400 hover:text-white pb-1 transition">
+                    📋 Text Snippet
+                  </button>
+                </div>
+                <span id="staged-count-label" class="text-xs text-slate-400">0 files staged</span>
+              </div>
+
+              <!-- FILE SENDER PANEL -->
+              <div id="panel-send-files" class="space-y-4">
+                <!-- Dropzone -->
+                <div id="dropzone" class="border-2 border-dashed border-[#30363d] hover:border-cyan-500/60 rounded-xl p-8 text-center cursor-pointer transition bg-[#0d1117]/50 hover:bg-cyan-950/10 group">
+                  <input id="file-input" type="file" multiple class="hidden" />
+                  <div class="w-12 h-12 mx-auto rounded-xl bg-slate-800 group-hover:bg-cyan-950 text-slate-400 group-hover:text-cyan-400 flex items-center justify-center text-2xl transition mb-3">
+                    📤
+                  </div>
+                  <p class="text-sm font-semibold text-white">Click or Drag & Drop Files Here</p>
+                  <p class="text-xs text-slate-500 mt-1">Supports any file size with chunked streaming</p>
+                </div>
+
+                <!-- Staged Files List -->
+                <div id="staged-files-container" class="hidden space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+
+                <!-- Send Action Button -->
+                <div class="flex items-center justify-between pt-2">
+                  <button id="btn-clear-staged" class="text-xs text-slate-400 hover:text-slate-200 transition">
+                    Clear Selection
+                  </button>
+                  <button id="btn-start-send" disabled class="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:hover:bg-cyan-500 text-slate-950 font-bold text-sm transition shadow-lg shadow-cyan-500/20">
+                    Send Files
+                  </button>
+                </div>
+              </div>
+
+              <!-- SNIPPET SENDER PANEL -->
+              <div id="panel-send-snippet" class="hidden space-y-4">
+                <textarea id="snippet-input" rows="5" placeholder="Type or paste text, URLs, or authentication tokens..." class="w-full px-4 py-3 text-xs bg-[#0d1117] border border-[#30363d] rounded-xl text-white font-mono focus:border-cyan-500 focus:outline-none resize-none"></textarea>
+                <div class="flex items-center justify-between">
+                  <button id="btn-paste-clipboard" class="text-xs text-cyan-400 hover:text-cyan-300 transition">
+                    Paste from Clipboard
+                  </button>
+                  <button id="btn-send-snippet" class="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm transition">
+                    Send Snippet
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- TRANSFER PROGRESS METER (Active during transmission) -->
+            <div id="active-transfer-panel" class="hidden bg-[#161b22] border border-cyan-800/80 rounded-2xl p-5 space-y-4 shadow-xl">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                  <span id="transfer-direction-label" class="text-xs font-bold uppercase tracking-wider text-cyan-400">Sending</span>
+                  <span id="transfer-filename" class="text-xs text-white font-mono truncate max-w-xs">file.iso</span>
+                </div>
+                <button id="btn-cancel-transfer" class="text-xs text-rose-400 hover:text-rose-300 transition font-medium">
+                  Cancel
+                </button>
+              </div>
+
+              <!-- Progress Bar -->
+              <div class="w-full bg-[#0d1117] h-3 rounded-full overflow-hidden p-0.5 border border-[#30363d]">
+                <div id="transfer-progress-bar" class="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-slate-400 font-mono">
+                <span id="transfer-bytes-label">0 MB / 0 MB</span>
+                <span id="transfer-speed-label" class="text-emerald-400 font-semibold">0.0 MB/s</span>
+                <span id="transfer-percent-label">0%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: RECEIVED FEED & HISTORY -->
+          <div class="space-y-6">
+            <div class="bg-[#161b22] border border-[#30363d] rounded-2xl p-5 space-y-4 shadow-xl h-full flex flex-col">
+              <div class="flex items-center justify-between border-b border-[#30363d] pb-3">
+                <h3 class="font-bold text-sm text-white flex items-center gap-2">
+                  📥 Received Items <span id="received-count-badge" class="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300">0</span>
+                </h3>
+                <button id="btn-clear-history" class="text-xs text-slate-500 hover:text-slate-400 transition">
+                  Clear
+                </button>
+              </div>
+
+              <div id="received-items-list" class="flex-1 space-y-3 overflow-y-auto max-h-[460px] pr-1">
+                <div id="empty-received-placeholder" class="text-center py-12 text-slate-500 text-xs">
+                  No files received yet.<br />Items sent to you will appear here.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- CAMERA SCANNER MODAL -->
+    <div id="camera-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between">
+          <h3 class="font-bold text-white text-sm">Scan Peer QR Code</h3>
+          <button id="btn-close-scanner" class="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+        <div id="camera-reader" class="rounded-xl overflow-hidden bg-black aspect-square flex items-center justify-center"></div>
+        <p class="text-xs text-center text-slate-400">Point your camera at the QR code on the other screen.</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

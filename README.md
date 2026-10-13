@@ -121,6 +121,23 @@ rdr-transit discover
 
 ---
 
+### 3. Client-Side Web App (`webapp/`)
+
+A 100% client-side web application built with **Vite + Tailwind CSS + WebRTC DataChannels** (zero backend server required):
+
+```bash
+cd webapp
+npm install
+npm run dev
+```
+
+- **Zero-Backend LAN Speed**: Streams directly peer-to-peer over your local network using WebRTC DataChannels.
+- **Serverless QR & Token Handshake**: Pair your phone and desktop in seconds using camera scanning or copy-paste tokens.
+- **Backpressure File Streaming**: Handles large file transfers safely without browser memory spikes.
+- **Text & Clipboard Snippets**: Real-time cross-device clipboard sharing.
+
+---
+
 ## Cross-Platform Architecture
 
 | Feature | Linux | Windows | macOS |

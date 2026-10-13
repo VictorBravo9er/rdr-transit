@@ -63,6 +63,7 @@ Whenever proposing or executing modifications, uphold these invariants without e
 | **Path Sanitization & Crawl** | `src/rdr_transit/utils/filesystem.py` | [`docs/SOURCE_CODE_REFERENCE.md#5`](file:///home/victor/antigravity/RDR-transit/docs/SOURCE_CODE_REFERENCE.md) |
 | **Terminal UI (Textual)** | `src/rdr_transit/tui/app.py` | [`docs/UI_UX_REFERENCE.md#2`](file:///home/victor/antigravity/RDR-transit/docs/UI_UX_REFERENCE.md) |
 | **CLI & Commands** | `src/rdr_transit/cli.py` | [`docs/SOURCE_CODE_REFERENCE.md#73`](file:///home/victor/antigravity/RDR-transit/docs/SOURCE_CODE_REFERENCE.md) |
+| **Client-Side Web App** | `webapp/` | [`webapp/README.md`](file:///home/victor/antigravity/RDR-transit/webapp/README.md) |
 
 ---
 
