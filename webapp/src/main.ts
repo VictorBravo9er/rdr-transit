@@ -8,7 +8,6 @@ import {
   SignalingChannel,
   type SignalingMessage,
   CloudflareSignalingClient,
-  DEFAULT_SIGNALING_URL,
 } from './signaling';
 import { saveFileBlob, getFileBlob, clearAllFileBlobs } from './db';
 
@@ -52,7 +51,6 @@ const viewPairing = document.getElementById('view-pairing') as HTMLElement;
 const viewDashboard = document.getElementById('view-dashboard') as HTMLElement;
 
 // Signaling header elements
-const btnSignalingSettings = document.getElementById('btn-signaling-settings') as HTMLButtonElement;
 const signalingStatusDot = document.getElementById('signaling-status-dot') as HTMLSpanElement;
 const signalingStatusText = document.getElementById('signaling-status-text') as HTMLSpanElement;
 
@@ -101,15 +99,6 @@ const joinAnswerStep = document.getElementById('join-answer-step') as HTMLDivEle
 const joinQrCanvas = document.getElementById('join-qr-canvas') as HTMLCanvasElement;
 const joinAnswerTokenInput = document.getElementById('join-answer-token-input') as HTMLInputElement;
 const btnCopyAnswerToken = document.getElementById('btn-copy-answer-token') as HTMLButtonElement;
-
-// Signaling settings modal
-const signalingModal = document.getElementById('signaling-modal') as HTMLDivElement;
-const btnCloseSignalingModal = document.getElementById('btn-close-signaling-modal') as HTMLButtonElement;
-const inputSignalingUrl = document.getElementById('input-signaling-url') as HTMLInputElement;
-const btnTestSignaling = document.getElementById('btn-test-signaling') as HTMLButtonElement;
-const signalingTestResult = document.getElementById('signaling-test-result') as HTMLSpanElement;
-const btnSaveSignaling = document.getElementById('btn-save-signaling') as HTMLButtonElement;
-const btnResetSignaling = document.getElementById('btn-reset-signaling') as HTMLButtonElement;
 
 // Camera modal
 const cameraModal = document.getElementById('camera-modal') as HTMLDivElement;
@@ -416,54 +405,6 @@ async function checkSignalingHealth() {
     signalingStatusText.textContent = 'Worker Offline';
   }
 }
-
-btnSignalingSettings.addEventListener('click', () => {
-  inputSignalingUrl.value = cfClient.getBaseUrl();
-  signalingTestResult.textContent = '';
-  signalingModal.classList.remove('hidden');
-});
-
-btnCloseSignalingModal.addEventListener('click', () => {
-  signalingModal.classList.add('hidden');
-});
-
-btnTestSignaling.addEventListener('click', async () => {
-  btnTestSignaling.disabled = true;
-  signalingTestResult.className = 'text-xs text-slate-400';
-  signalingTestResult.textContent = 'Testing...';
-
-  const testClient = new CloudflareSignalingClient(inputSignalingUrl.value.trim());
-  const health = await testClient.checkHealth();
-  btnTestSignaling.disabled = false;
-
-  if (health.ok) {
-    signalingTestResult.className = 'text-xs text-emerald-400 font-medium';
-    signalingTestResult.textContent = `✓ Online (${health.activeRooms ?? 0} active rooms)`;
-  } else {
-    signalingTestResult.className = 'text-xs text-rose-400 font-medium';
-    signalingTestResult.textContent = `✕ ${health.error || 'Connection failed'}`;
-  }
-});
-
-btnSaveSignaling.addEventListener('click', () => {
-  const url = inputSignalingUrl.value.trim();
-  if (!url) {
-    showToast('Please enter a valid signaling URL', 'error');
-    return;
-  }
-  cfClient.setBaseUrl(url);
-  signalingModal.classList.add('hidden');
-  showToast('Signaling server updated!', 'success');
-  checkSignalingHealth();
-});
-
-btnResetSignaling.addEventListener('click', () => {
-  inputSignalingUrl.value = DEFAULT_SIGNALING_URL;
-  cfClient.setBaseUrl(DEFAULT_SIGNALING_URL);
-  signalingTestResult.textContent = 'Reset to default';
-  signalingTestResult.className = 'text-xs text-slate-400';
-  checkSignalingHealth();
-});
 
 // ----------------------------------------------------
 // 6-Digit PIN Pairing Flow (Host)

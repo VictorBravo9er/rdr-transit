@@ -24,11 +24,10 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <button id="btn-signaling-settings" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#21262d] text-slate-300 hover:text-white border border-[#30363d] transition" title="Signaling Worker Settings">
+          <div id="signaling-status-pill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#161b22] text-slate-300 border border-[#30363d]" title="Cloudflare Signaling: https://rdr-transit-signaling.vikramjitborah.workers.dev/">
             <span id="signaling-status-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
             <span id="signaling-status-text" class="hidden sm:inline">Signaling</span>
-            <span class="text-[10px] text-slate-400">⚙️</span>
-          </button>
+          </div>
           <div id="connection-status-pill" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
             <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
             <span id="connection-status-text">Disconnected</span>
@@ -358,41 +357,6 @@
         </div>
         <div id="camera-reader" class="rounded-xl overflow-hidden bg-black aspect-square flex items-center justify-center"></div>
         <p class="text-xs text-center text-slate-400">Point your camera at the QR code on the other screen.</p>
-      </div>
-    </div>
-
-    <!-- SIGNALING SETTINGS MODAL -->
-    <div id="signaling-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div class="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-        <div class="flex items-center justify-between">
-          <h3 class="font-bold text-white text-sm flex items-center gap-2">
-            <span>⚙️</span> Signaling Worker Settings
-          </h3>
-          <button id="btn-close-signaling-modal" class="text-slate-400 hover:text-white text-xl">✕</button>
-        </div>
-        <div class="space-y-4 text-xs">
-          <p class="text-slate-400">
-            The Cloudflare Worker coordinates ephemeral 6-digit PIN matchmaking. All file transfers and streams remain <b>100% direct LAN WebRTC</b>.
-          </p>
-          <div class="space-y-1.5">
-            <label class="block font-medium text-slate-300">Signaling Server URL:</label>
-            <input id="input-signaling-url" type="url" placeholder="https://rdr-transit-signaling.workers.dev" class="w-full px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-cyan-500 focus:outline-none" />
-          </div>
-          <div class="flex items-center justify-between pt-1">
-            <button id="btn-test-signaling" type="button" class="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-white rounded-lg border border-[#30363d] transition">
-              Test Connection
-            </button>
-            <span id="signaling-test-result" class="text-xs text-slate-400"></span>
-          </div>
-          <div class="pt-2 flex gap-2">
-            <button id="btn-save-signaling" type="button" class="flex-1 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg transition">
-              Save & Apply
-            </button>
-            <button id="btn-reset-signaling" type="button" class="px-3 py-2.5 bg-[#21262d] hover:bg-[#30363d] text-slate-300 rounded-lg border border-[#30363d] transition">
-              Reset Default
-            </button>
-          </div>
-        </div>
       </div>
     </div>
 

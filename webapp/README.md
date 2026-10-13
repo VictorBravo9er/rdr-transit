@@ -14,8 +14,8 @@
   - No copy-pasting long tokens or scanning screens required under normal network conditions.
 - **Offline & Air-Gapped Fallback**:
   - Expandable offline drawers provide the traditional zero-network QR code generation, camera scanning, and manual SDP token exchange for air-gapped LANs.
-- **Configurable Signaling Worker**:
-  - Built-in status indicator and modal settings allow pointing to your own deployed Cloudflare Worker or local `wrangler dev` endpoint.
+- **Cloudflare Worker Signaling Relay**:
+  - Pre-configured to `https://rdr-transit-signaling.vikramjitborah.workers.dev/` out of the box with live status monitoring in the header.
 - **Service Worker Precaching (Instant F5 / Offline Reload)**: All built assets (`index.html`, JS bundles, CSS, icons) are precached in the browser's Cache Storage via Workbox. Pressing refresh (F5) or reopening the app instantly serves from local cache without re-downloading identical files over the network. When a new version is pushed to hosting, the Service Worker automatically detects the revision in the background and updates the cache.
 - **Local Wi-Fi Speed**: Connects directly via WebRTC DataChannels. When both devices are on the same local network, traffic is routed locally across the Wi-Fi router at maximum speed without passing through the internet.
 - **Backpressure-Managed Streaming**: Streams gigabyte-sized files in 64 KB binary chunks with backpressure monitoring (`bufferedAmount`) so memory never overflows.

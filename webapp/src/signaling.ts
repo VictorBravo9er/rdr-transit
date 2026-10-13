@@ -141,21 +141,10 @@ export class SignalingChannel {
   }
 }
 
-export const DEFAULT_SIGNALING_URL = 'https://rdr-transit-signaling.workers.dev';
-export const STORAGE_SIGNALING_URL_KEY = 'rdr_signaling_server_url';
+export const DEFAULT_SIGNALING_URL = 'https://rdr-transit-signaling.vikramjitborah.workers.dev';
 
 export function getSignalingServerUrl(): string {
-  try {
-    const saved = localStorage.getItem(STORAGE_SIGNALING_URL_KEY);
-    if (saved && saved.trim()) return saved.trim();
-  } catch {}
   return DEFAULT_SIGNALING_URL;
-}
-
-export function setSignalingServerUrl(url: string) {
-  try {
-    localStorage.setItem(STORAGE_SIGNALING_URL_KEY, url.trim());
-  } catch {}
 }
 
 export interface RoomCreationResult {
@@ -173,19 +162,14 @@ export interface RoomDetails {
 }
 
 export class CloudflareSignalingClient {
-  private baseUrl: string;
+  private readonly baseUrl: string = DEFAULT_SIGNALING_URL.replace(/\/+$/, '');
 
-  constructor(customUrl?: string) {
-    this.baseUrl = (customUrl || getSignalingServerUrl()).replace(/\/+$/, '');
+  constructor() {
+    this.baseUrl = DEFAULT_SIGNALING_URL.replace(/\/+$/, '');
   }
 
   getBaseUrl(): string {
     return this.baseUrl;
-  }
-
-  setBaseUrl(url: string) {
-    this.baseUrl = url.replace(/\/+$/, '');
-    setSignalingServerUrl(this.baseUrl);
   }
 
   async checkHealth(): Promise<{ ok: boolean; activeRooms?: number; error?: string }> {
