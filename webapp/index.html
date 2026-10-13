@@ -23,7 +23,12 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <button id="btn-signaling-settings" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#21262d] text-slate-300 hover:text-white border border-[#30363d] transition" title="Signaling Worker Settings">
+            <span id="signaling-status-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span id="signaling-status-text" class="hidden sm:inline">Signaling</span>
+            <span class="text-[10px] text-slate-400">⚙️</span>
+          </button>
           <div id="connection-status-pill" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
             <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
             <span id="connection-status-text">Disconnected</span>
@@ -53,61 +58,102 @@
         <div class="max-w-2xl mx-auto bg-[#161b22] border border-[#30363d] rounded-2xl overflow-hidden shadow-xl">
           <div class="flex border-b border-[#30363d] bg-[#0d1117]/60">
             <button id="tab-btn-host" class="flex-1 py-3 text-sm font-semibold text-cyan-400 border-b-2 border-cyan-400 bg-[#161b22] transition">
-              1. Host / Create Link
+              1. Host / Create PIN
             </button>
             <button id="tab-btn-join" class="flex-1 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent transition">
-              2. Join / Scan QR
+              2. Join / Enter PIN
             </button>
           </div>
 
           <!-- TAB CONTENT: HOST -->
           <div id="tab-content-host" class="p-6 space-y-6">
+            <!-- Step 1: Initial Button -->
             <div id="host-initial-step" class="text-center py-6 space-y-4">
               <div class="w-16 h-16 mx-auto rounded-2xl bg-cyan-950 border border-cyan-800 flex items-center justify-center text-cyan-400 text-3xl">
-                📡
+                ⚡
               </div>
               <div>
-                <h3 class="font-semibold text-white">Generate Connection Invitation</h3>
+                <h3 class="font-semibold text-white">Start 6-Digit Pairing</h3>
                 <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                  Creates an encrypted WebRTC invitation code with your local network address embedded.
+                  Generates an ephemeral 6-digit code via Cloudflare Worker. All transfers are 100% direct LAN WebRTC.
                 </p>
               </div>
-              <button id="btn-create-offer" class="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-cyan-500/25">
-                Generate Pairing Code
+              <button id="btn-create-pin" class="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-cyan-500/25">
+                Generate 6-Digit PIN
               </button>
             </div>
 
-            <div id="host-qr-step" class="hidden space-y-6">
-              <div class="flex flex-col items-center gap-4">
-                <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Step 1: Scan this QR code on your second device
-                </p>
-                <div class="p-4 bg-white rounded-2xl shadow-xl flex items-center justify-center">
-                  <canvas id="host-qr-canvas" class="max-w-full"></canvas>
+            <!-- Step 2: PIN Display & Waiting State -->
+            <div id="host-pin-step" class="hidden text-center py-4 space-y-5">
+              <p class="text-xs font-semibold uppercase tracking-wider text-cyan-400">Share This Code With Peer Device</p>
+              <div class="flex items-center justify-center gap-3">
+                <div id="host-pin-display" class="px-8 py-3.5 bg-[#0d1117] border-2 border-cyan-500/50 rounded-2xl text-4xl md:text-5xl font-mono font-bold tracking-widest text-cyan-400 select-all shadow-inner">
+                  --- ---
                 </div>
-                <div class="flex gap-2 w-full max-w-md">
-                  <input id="host-offer-token-input" type="text" readonly class="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-slate-400 font-mono truncate" />
-                  <button id="btn-copy-offer-token" class="px-3 py-1.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition">
-                    Copy
-                  </button>
-                </div>
+                <button id="btn-copy-pin" class="p-3.5 rounded-xl bg-[#21262d] hover:bg-[#30363d] text-white border border-[#30363d] transition" title="Copy PIN">
+                  📋
+                </button>
               </div>
+              <div class="flex items-center justify-center gap-4 text-xs text-slate-400">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                  <span>Waiting for peer to enter code...</span>
+                </div>
+                <span>•</span>
+                <div>Expires in <span id="host-pin-timer" class="font-mono text-cyan-300 font-semibold">120s</span></div>
+              </div>
+              <div>
+                <button id="btn-cancel-pin" class="text-xs text-slate-500 hover:text-slate-300 underline">
+                  Cancel / Regenerate Code
+                </button>
+              </div>
+            </div>
 
-              <div class="border-t border-[#30363d] pt-6 space-y-3">
-                <p class="text-xs font-semibold uppercase tracking-wider text-cyan-400">
-                  Step 2: Complete the handshake
-                </p>
-                <p class="text-xs text-slate-400">
-                  After scanning on the second device, it will display an <b>Answer Code</b>. Paste it below or scan it using your webcam.
-                </p>
-                <div class="flex gap-2">
-                  <input id="host-answer-input" type="text" placeholder="Paste peer Answer token here..." class="flex-1 px-3 py-2 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-cyan-500 focus:outline-none" />
-                  <button id="btn-submit-answer" class="px-4 py-2 text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg transition">
-                    Connect
+            <!-- Offline / Air-Gapped Fallback Drawer -->
+            <div class="border-t border-[#30363d] pt-4">
+              <button id="btn-toggle-host-offline" type="button" class="w-full flex items-center justify-between text-xs text-slate-400 hover:text-white py-1">
+                <span>Offline / Air-Gapped Mode (QR Code & Manual Token)</span>
+                <span id="host-offline-arrow" class="text-[10px] transition-transform">▼</span>
+              </button>
+              <div id="host-offline-section" class="hidden pt-4 space-y-6">
+                <div class="text-center space-y-2">
+                  <button id="btn-create-offer-offline" class="px-4 py-2 rounded-lg bg-[#21262d] hover:bg-[#30363d] text-white text-xs border border-[#30363d] transition">
+                    Generate Offline QR Code
                   </button>
-                  <button id="btn-scan-answer-camera" class="px-3 py-2 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition flex items-center gap-1" title="Scan with webcam">
-                    📷 Scan
-                  </button>
+                </div>
+                <div id="host-qr-step" class="hidden space-y-6">
+                  <div class="flex flex-col items-center gap-4">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Scan this QR code on your second device
+                    </p>
+                    <div class="p-4 bg-white rounded-2xl shadow-xl flex items-center justify-center">
+                      <canvas id="host-qr-canvas" class="max-w-full"></canvas>
+                    </div>
+                    <div class="flex gap-2 w-full max-w-md">
+                      <input id="host-offer-token-input" type="text" readonly class="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-slate-400 font-mono truncate" />
+                      <button id="btn-copy-offer-token" class="px-3 py-1.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition">
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="border-t border-[#30363d] pt-6 space-y-3">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-cyan-400">
+                      Step 2: Complete the handshake
+                    </p>
+                    <p class="text-xs text-slate-400">
+                      Paste peer's <b>Answer Token</b> below or scan it using your webcam.
+                    </p>
+                    <div class="flex gap-2">
+                      <input id="host-answer-input" type="text" placeholder="Paste peer Answer token here..." class="flex-1 px-3 py-2 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-cyan-500 focus:outline-none" />
+                      <button id="btn-submit-answer" class="px-4 py-2 text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg transition">
+                        Connect
+                      </button>
+                      <button id="btn-scan-answer-camera" class="px-3 py-2 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition flex items-center gap-1" title="Scan with webcam">
+                        📷 Scan
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -115,36 +161,65 @@
 
           <!-- TAB CONTENT: JOIN -->
           <div id="tab-content-join" class="hidden p-6 space-y-6">
-            <div class="space-y-4">
-              <div class="text-center py-4 space-y-3">
-                <button id="btn-open-scanner" class="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 mx-auto">
-                  📷 Scan Host QR Code (Camera)
-                </button>
-                <p class="text-xs text-slate-500">Or paste the host invitation token manually below</p>
+            <!-- 6-Digit PIN Entry -->
+            <div id="join-pin-step" class="py-4 space-y-5 text-center max-w-sm mx-auto">
+              <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400 text-3xl">
+                🔑
               </div>
-
-              <!-- Manual token paste -->
-              <div class="space-y-2">
-                <label class="block text-xs font-medium text-slate-400">Paste Host Offer Token:</label>
-                <textarea id="join-offer-input" rows="3" placeholder="Paste the token copied from the host device..." class="w-full px-3 py-2 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-emerald-500 focus:outline-none resize-none"></textarea>
-                <button id="btn-process-offer" class="w-full py-2.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-bold rounded-lg border border-[#30363d] transition">
-                  Process Offer & Generate Answer
-                </button>
-              </div>
-
-              <!-- Answer QR display -->
-              <div id="join-answer-step" class="hidden border-t border-[#30363d] pt-6 space-y-4 text-center">
-                <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-                  Show this Answer QR code to the Host device
+              <div>
+                <h3 class="font-semibold text-white">Enter 6-Digit Pairing Code</h3>
+                <p class="text-xs text-slate-400 mt-1">
+                  Type the code shown on the host device to pair automatically.
                 </p>
-                <div class="p-4 bg-white rounded-2xl shadow-xl inline-block mx-auto">
-                  <canvas id="join-qr-canvas"></canvas>
+              </div>
+              <div class="space-y-3">
+                <input id="join-pin-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="482 910" class="w-full py-3 text-center text-3xl font-mono font-bold tracking-widest bg-[#0d1117] border-2 border-[#30363d] rounded-2xl text-emerald-400 placeholder-slate-700 focus:border-emerald-500 focus:outline-none transition shadow-inner" />
+                <button id="btn-submit-pin" class="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
+                  Connect to Host
+                </button>
+                <div id="join-pin-status" class="hidden text-xs text-emerald-400 flex items-center justify-center gap-2 py-1">
+                  <span class="animate-spin">⏳</span> <span id="join-pin-status-text">Connecting to Host via Local LAN...</span>
                 </div>
-                <div class="flex gap-2 max-w-md mx-auto">
-                  <input id="join-answer-token-input" type="text" readonly class="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-slate-400 font-mono truncate" />
-                  <button id="btn-copy-answer-token" class="px-3 py-1.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition">
-                    Copy
+              </div>
+            </div>
+
+            <!-- Offline / Air-Gapped Fallback Drawer -->
+            <div class="border-t border-[#30363d] pt-4">
+              <button id="btn-toggle-join-offline" type="button" class="w-full flex items-center justify-between text-xs text-slate-400 hover:text-white py-1">
+                <span>Offline / Air-Gapped Mode (Camera Scanner & Manual Token)</span>
+                <span id="join-offline-arrow" class="text-[10px] transition-transform">▼</span>
+              </button>
+              <div id="join-offline-section" class="hidden pt-4 space-y-4">
+                <div class="text-center py-2 space-y-2">
+                  <button id="btn-open-scanner" class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 mx-auto">
+                    📷 Scan Host QR Code (Camera)
                   </button>
+                  <p class="text-[11px] text-slate-500">Or paste the host invitation token manually below</p>
+                </div>
+
+                <!-- Manual token paste -->
+                <div class="space-y-2">
+                  <label class="block text-xs font-medium text-slate-400">Paste Host Offer Token:</label>
+                  <textarea id="join-offer-input" rows="3" placeholder="Paste the token copied from the host device..." class="w-full px-3 py-2 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-emerald-500 focus:outline-none resize-none"></textarea>
+                  <button id="btn-process-offer" class="w-full py-2.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-bold rounded-lg border border-[#30363d] transition">
+                    Process Offer & Generate Answer
+                  </button>
+                </div>
+
+                <!-- Answer QR display -->
+                <div id="join-answer-step" class="hidden border-t border-[#30363d] pt-4 space-y-4 text-center">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                    Show this Answer QR code to the Host device
+                  </p>
+                  <div class="p-4 bg-white rounded-2xl shadow-xl inline-block mx-auto">
+                    <canvas id="join-qr-canvas"></canvas>
+                  </div>
+                  <div class="flex gap-2 max-w-md mx-auto">
+                    <input id="join-answer-token-input" type="text" readonly class="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] rounded-lg text-slate-400 font-mono truncate" />
+                    <button id="btn-copy-answer-token" class="px-3 py-1.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-white font-medium rounded-lg border border-[#30363d] transition">
+                      Copy
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -283,6 +358,41 @@
         </div>
         <div id="camera-reader" class="rounded-xl overflow-hidden bg-black aspect-square flex items-center justify-center"></div>
         <p class="text-xs text-center text-slate-400">Point your camera at the QR code on the other screen.</p>
+      </div>
+    </div>
+
+    <!-- SIGNALING SETTINGS MODAL -->
+    <div id="signaling-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between">
+          <h3 class="font-bold text-white text-sm flex items-center gap-2">
+            <span>⚙️</span> Signaling Worker Settings
+          </h3>
+          <button id="btn-close-signaling-modal" class="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+        <div class="space-y-4 text-xs">
+          <p class="text-slate-400">
+            The Cloudflare Worker coordinates ephemeral 6-digit PIN matchmaking. All file transfers and streams remain <b>100% direct LAN WebRTC</b>.
+          </p>
+          <div class="space-y-1.5">
+            <label class="block font-medium text-slate-300">Signaling Server URL:</label>
+            <input id="input-signaling-url" type="url" placeholder="https://rdr-transit-signaling.workers.dev" class="w-full px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-white font-mono focus:border-cyan-500 focus:outline-none" />
+          </div>
+          <div class="flex items-center justify-between pt-1">
+            <button id="btn-test-signaling" type="button" class="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-white rounded-lg border border-[#30363d] transition">
+              Test Connection
+            </button>
+            <span id="signaling-test-result" class="text-xs text-slate-400"></span>
+          </div>
+          <div class="pt-2 flex gap-2">
+            <button id="btn-save-signaling" type="button" class="flex-1 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg transition">
+              Save & Apply
+            </button>
+            <button id="btn-reset-signaling" type="button" class="px-3 py-2.5 bg-[#21262d] hover:bg-[#30363d] text-slate-300 rounded-lg border border-[#30363d] transition">
+              Reset Default
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 

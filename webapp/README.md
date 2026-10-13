@@ -7,14 +7,18 @@
 
 ## Highlights
 
-- **100% Client-Side**: No backend, no server-side storage, no tracking. Can be hosted statically on GitHub Pages, Vercel, Netlify, or run locally.
+- **100% Direct LAN P2P**: File transfers, folders, and snippets stream directly over encrypted WebRTC DataChannels at full local Wi-Fi speeds. Zero file payload ever touches any server.
+- **Instant 6-Digit PIN Matchmaking**:
+  - **Host** clicks "Generate 6-Digit PIN" and shares an ephemeral 6-digit code (e.g. `482 910`).
+  - **Joiner** enters the 6-digit code, which automatically completes the WebRTC SDP handshake via a serverless **Cloudflare Worker** matchmaker (`worker/`).
+  - No copy-pasting long tokens or scanning screens required under normal network conditions.
+- **Offline & Air-Gapped Fallback**:
+  - Expandable offline drawers provide the traditional zero-network QR code generation, camera scanning, and manual SDP token exchange for air-gapped LANs.
+- **Configurable Signaling Worker**:
+  - Built-in status indicator and modal settings allow pointing to your own deployed Cloudflare Worker or local `wrangler dev` endpoint.
 - **Service Worker Precaching (Instant F5 / Offline Reload)**: All built assets (`index.html`, JS bundles, CSS, icons) are precached in the browser's Cache Storage via Workbox. Pressing refresh (F5) or reopening the app instantly serves from local cache without re-downloading identical files over the network. When a new version is pushed to hosting, the Service Worker automatically detects the revision in the background and updates the cache.
 - **Local Wi-Fi Speed**: Connects directly via WebRTC DataChannels. When both devices are on the same local network, traffic is routed locally across the Wi-Fi router at maximum speed without passing through the internet.
 - **Backpressure-Managed Streaming**: Streams gigabyte-sized files in 64 KB binary chunks with backpressure monitoring (`bufferedAmount`) so memory never overflows.
-- **Serverless QR & Token Handshake**:
-  - **Host** generates an encrypted connection invitation embedded into a QR code or copyable token.
-  - **Joiner** points their phone/laptop camera to scan the QR code (or pastes the token) and generates an answer code.
-  - Handshake completes in seconds.
 - **Unified Transmissions Feed**: Live real-time ledger tracking all sent and received files with download links, along with sent and received text snippets.
 - **Connection Persistence Across Page Refresh**: Active connections automatically persist across browser reloads (F5 / refreshes) via session storage, `BroadcastChannel`, and background reconnection signaling. Connections remain established unless an active peer tab or page is explicitly closed or disconnected.
 - **File & Snippet Support**: Send multiple files, folders, or instant clipboard text snippets.

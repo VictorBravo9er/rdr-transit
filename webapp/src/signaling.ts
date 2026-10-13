@@ -140,3 +140,165 @@ export class SignalingChannel {
     }
   }
 }
+
+export const DEFAULT_SIGNALING_URL = 'https://rdr-transit-signaling.workers.dev';
+export const STORAGE_SIGNALING_URL_KEY = 'rdr_signaling_server_url';
+
+export function getSignalingServerUrl(): string {
+  try {
+    const saved = localStorage.getItem(STORAGE_SIGNALING_URL_KEY);
+    if (saved && saved.trim()) return saved.trim();
+  } catch {}
+  return DEFAULT_SIGNALING_URL;
+}
+
+export function setSignalingServerUrl(url: string) {
+  try {
+    localStorage.setItem(STORAGE_SIGNALING_URL_KEY, url.trim());
+  } catch {}
+}
+
+export interface RoomCreationResult {
+  code: string;
+  roomId: string;
+  expiresAt: number;
+  ttlSeconds: number;
+}
+
+export interface RoomDetails {
+  code: string;
+  offer: string;
+  sessionId?: string;
+  expiresAt: number;
+}
+
+export class CloudflareSignalingClient {
+  private baseUrl: string;
+
+  constructor(customUrl?: string) {
+    this.baseUrl = (customUrl || getSignalingServerUrl()).replace(/\/+$/, '');
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  setBaseUrl(url: string) {
+    this.baseUrl = url.replace(/\/+$/, '');
+    setSignalingServerUrl(this.baseUrl);
+  }
+
+  async checkHealth(): Promise<{ ok: boolean; activeRooms?: number; error?: string }> {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${this.baseUrl}/api/health`, {
+        signal: controller.signal,
+      });
+      clearTimeout(id);
+      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+      const data = await res.json();
+      return { ok: true, activeRooms: data.activeRooms };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Connection failed';
+      return { ok: false, error: msg };
+    }
+  }
+
+  async createRoom(offer: string, sessionId?: string): Promise<RoomCreationResult> {
+    const res = await fetch(`${this.baseUrl}/api/room`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offer, sessionId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to create room: HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async joinRoom(code: string): Promise<RoomDetails> {
+    const sanitizedCode = code.replace(/\D/g, '');
+    const res = await fetch(`${this.baseUrl}/api/room/${sanitizedCode}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Room ${sanitizedCode} not found or expired`);
+    }
+    return res.json();
+  }
+
+  async submitAnswer(code: string, answer: string): Promise<void> {
+    const sanitizedCode = code.replace(/\D/g, '');
+    const res = await fetch(`${this.baseUrl}/api/room/${sanitizedCode}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to submit answer: HTTP ${res.status}`);
+    }
+  }
+
+  async waitForAnswer(code: string, abortSignal?: AbortSignal, maxWaitMs = 120000): Promise<string> {
+    const sanitizedCode = code.replace(/\D/g, '');
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitMs) {
+      if (abortSignal?.aborted) {
+        throw new Error('Waiting aborted');
+      }
+
+      try {
+        const res = await fetch(`${this.baseUrl}/api/room/${sanitizedCode}/poll?timeout=15`, {
+          signal: abortSignal,
+        });
+
+        if (!res.ok) {
+          if (res.status === 404) {
+            throw new Error('Room expired or closed');
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+
+        const data = await res.json();
+        if (data.answer) {
+          return data.answer;
+        }
+        // If data.waiting is true, continue to next poll
+      } catch (e: unknown) {
+        if (abortSignal?.aborted || (e instanceof Error && e.name === 'AbortError')) {
+          throw new Error('Waiting aborted');
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+
+    throw new Error('Timed out waiting for peer to join');
+  }
+
+  async reconnect(
+    sessionId: string,
+    role: 'host' | 'joiner',
+    token?: string
+  ): Promise<{ hasOffer?: boolean; offer?: string; hasAnswer?: boolean; answer?: string }> {
+    try {
+      const body: Record<string, string> = { sessionId, role };
+      if (role === 'host' && token) body.offer = token;
+      if (role === 'joiner' && token) body.answer = token;
+
+      const res = await fetch(`${this.baseUrl}/api/reconnect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        return res.json();
+      }
+    } catch {}
+    return {};
+  }
+}
+

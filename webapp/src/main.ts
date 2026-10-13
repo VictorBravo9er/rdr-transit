@@ -4,7 +4,12 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { registerSW } from 'virtual:pwa-register';
 import { WebRTCManager, type ConnectionStatus, type ProgressInfo, type ReceivedFile } from './webrtc';
 import { formatBytes, formatSpeed } from './protocol';
-import { SignalingChannel, type SignalingMessage } from './signaling';
+import {
+  SignalingChannel,
+  type SignalingMessage,
+  CloudflareSignalingClient,
+  DEFAULT_SIGNALING_URL,
+} from './signaling';
 import { saveFileBlob, getFileBlob, clearAllFileBlobs } from './db';
 
 // Register Service Worker for instant offline & F5 reload without refetching assets from web
@@ -46,16 +51,32 @@ const btnDisconnect = document.getElementById('btn-disconnect') as HTMLButtonEle
 const viewPairing = document.getElementById('view-pairing') as HTMLElement;
 const viewDashboard = document.getElementById('view-dashboard') as HTMLElement;
 
+// Signaling header elements
+const btnSignalingSettings = document.getElementById('btn-signaling-settings') as HTMLButtonElement;
+const signalingStatusDot = document.getElementById('signaling-status-dot') as HTMLSpanElement;
+const signalingStatusText = document.getElementById('signaling-status-text') as HTMLSpanElement;
+
 // Tabs for pairing
 const tabBtnHost = document.getElementById('tab-btn-host') as HTMLButtonElement;
 const tabBtnJoin = document.getElementById('tab-btn-join') as HTMLButtonElement;
 const tabContentHost = document.getElementById('tab-content-host') as HTMLDivElement;
 const tabContentJoin = document.getElementById('tab-content-join') as HTMLDivElement;
 
-// Host controls
+// Host controls (6-digit PIN primary)
 const hostInitialStep = document.getElementById('host-initial-step') as HTMLDivElement;
+const btnCreatePin = document.getElementById('btn-create-pin') as HTMLButtonElement;
+const hostPinStep = document.getElementById('host-pin-step') as HTMLDivElement;
+const hostPinDisplay = document.getElementById('host-pin-display') as HTMLDivElement;
+const btnCopyPin = document.getElementById('btn-copy-pin') as HTMLButtonElement;
+const hostPinTimer = document.getElementById('host-pin-timer') as HTMLSpanElement;
+const btnCancelPin = document.getElementById('btn-cancel-pin') as HTMLButtonElement;
+
+// Host controls (Offline fallback)
+const btnToggleHostOffline = document.getElementById('btn-toggle-host-offline') as HTMLButtonElement;
+const hostOfflineArrow = document.getElementById('host-offline-arrow') as HTMLSpanElement;
+const hostOfflineSection = document.getElementById('host-offline-section') as HTMLDivElement;
+const btnCreateOfferOffline = document.getElementById('btn-create-offer-offline') as HTMLButtonElement;
 const hostQrStep = document.getElementById('host-qr-step') as HTMLDivElement;
-const btnCreateOffer = document.getElementById('btn-create-offer') as HTMLButtonElement;
 const hostQrCanvas = document.getElementById('host-qr-canvas') as HTMLCanvasElement;
 const hostOfferTokenInput = document.getElementById('host-offer-token-input') as HTMLInputElement;
 const btnCopyOfferToken = document.getElementById('btn-copy-offer-token') as HTMLButtonElement;
@@ -63,7 +84,16 @@ const hostAnswerInput = document.getElementById('host-answer-input') as HTMLInpu
 const btnSubmitAnswer = document.getElementById('btn-submit-answer') as HTMLButtonElement;
 const btnScanAnswerCamera = document.getElementById('btn-scan-answer-camera') as HTMLButtonElement;
 
-// Join controls
+// Join controls (6-digit PIN primary)
+const joinPinInput = document.getElementById('join-pin-input') as HTMLInputElement;
+const btnSubmitPin = document.getElementById('btn-submit-pin') as HTMLButtonElement;
+const joinPinStatus = document.getElementById('join-pin-status') as HTMLDivElement;
+const joinPinStatusText = document.getElementById('join-pin-status-text') as HTMLSpanElement;
+
+// Join controls (Offline fallback)
+const btnToggleJoinOffline = document.getElementById('btn-toggle-join-offline') as HTMLButtonElement;
+const joinOfflineArrow = document.getElementById('join-offline-arrow') as HTMLSpanElement;
+const joinOfflineSection = document.getElementById('join-offline-section') as HTMLDivElement;
 const btnOpenScanner = document.getElementById('btn-open-scanner') as HTMLButtonElement;
 const joinOfferInput = document.getElementById('join-offer-input') as HTMLTextAreaElement;
 const btnProcessOffer = document.getElementById('btn-process-offer') as HTMLButtonElement;
@@ -71,6 +101,15 @@ const joinAnswerStep = document.getElementById('join-answer-step') as HTMLDivEle
 const joinQrCanvas = document.getElementById('join-qr-canvas') as HTMLCanvasElement;
 const joinAnswerTokenInput = document.getElementById('join-answer-token-input') as HTMLInputElement;
 const btnCopyAnswerToken = document.getElementById('btn-copy-answer-token') as HTMLButtonElement;
+
+// Signaling settings modal
+const signalingModal = document.getElementById('signaling-modal') as HTMLDivElement;
+const btnCloseSignalingModal = document.getElementById('btn-close-signaling-modal') as HTMLButtonElement;
+const inputSignalingUrl = document.getElementById('input-signaling-url') as HTMLInputElement;
+const btnTestSignaling = document.getElementById('btn-test-signaling') as HTMLButtonElement;
+const signalingTestResult = document.getElementById('signaling-test-result') as HTMLSpanElement;
+const btnSaveSignaling = document.getElementById('btn-save-signaling') as HTMLButtonElement;
+const btnResetSignaling = document.getElementById('btn-reset-signaling') as HTMLButtonElement;
 
 // Camera modal
 const cameraModal = document.getElementById('camera-modal') as HTMLDivElement;
@@ -116,6 +155,9 @@ const toastContainer = document.getElementById('toast-container') as HTMLDivElem
 let stagedFiles: File[] = [];
 let transmissions: TransmissionItem[] = [];
 let signaling: SignalingChannel | null = null;
+const cfClient = new CloudflareSignalingClient();
+let hostPinAbortController: AbortController | null = null;
+let hostPinTimerInterval: ReturnType<typeof setInterval> | null = null;
 let activeBlobs = new Map<string, Blob>();
 
 // Initialize WebRTC Manager
@@ -152,8 +194,26 @@ function showToast(message: string, type: 'info' | 'success' | 'error' = 'info')
   }, 4000);
 }
 
+function resetHostPinState() {
+  if (hostPinAbortController) {
+    hostPinAbortController.abort();
+    hostPinAbortController = null;
+  }
+  if (hostPinTimerInterval) {
+    clearInterval(hostPinTimerInterval);
+    hostPinTimerInterval = null;
+  }
+  hostPinStep.classList.add('hidden');
+  hostInitialStep.classList.remove('hidden');
+  joinPinStatus.classList.add('hidden');
+  btnSubmitPin.disabled = false;
+  btnCreatePin.disabled = false;
+  btnCreatePin.textContent = 'Generate 6-Digit PIN';
+}
+
 function handleStatusChange(status: ConnectionStatus, message?: string) {
   if (status === 'connected') {
+    resetHostPinState();
     statusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800';
     statusText.textContent = 'Connected (P2P)';
     btnDisconnect.classList.remove('hidden');
@@ -188,6 +248,7 @@ function handleStatusChange(status: ConnectionStatus, message?: string) {
     statusText.textContent = message || 'Connecting...';
   } else {
     // Disconnected
+    resetHostPinState();
     sessionStorage.removeItem(STORAGE_SESSION_KEY);
     statusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700';
     statusText.textContent = 'Disconnected';
@@ -341,9 +402,76 @@ tabBtnJoin.addEventListener('click', () => {
   tabContentHost.classList.add('hidden');
 });
 
-btnCreateOffer.addEventListener('click', async () => {
-  btnCreateOffer.disabled = true;
-  btnCreateOffer.textContent = 'Generating...';
+// ----------------------------------------------------
+// Signaling Server Status & Settings
+// ----------------------------------------------------
+
+async function checkSignalingHealth() {
+  const health = await cfClient.checkHealth();
+  if (health.ok) {
+    signalingStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+    signalingStatusText.textContent = 'Worker Online';
+  } else {
+    signalingStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+    signalingStatusText.textContent = 'Worker Offline';
+  }
+}
+
+btnSignalingSettings.addEventListener('click', () => {
+  inputSignalingUrl.value = cfClient.getBaseUrl();
+  signalingTestResult.textContent = '';
+  signalingModal.classList.remove('hidden');
+});
+
+btnCloseSignalingModal.addEventListener('click', () => {
+  signalingModal.classList.add('hidden');
+});
+
+btnTestSignaling.addEventListener('click', async () => {
+  btnTestSignaling.disabled = true;
+  signalingTestResult.className = 'text-xs text-slate-400';
+  signalingTestResult.textContent = 'Testing...';
+
+  const testClient = new CloudflareSignalingClient(inputSignalingUrl.value.trim());
+  const health = await testClient.checkHealth();
+  btnTestSignaling.disabled = false;
+
+  if (health.ok) {
+    signalingTestResult.className = 'text-xs text-emerald-400 font-medium';
+    signalingTestResult.textContent = `✓ Online (${health.activeRooms ?? 0} active rooms)`;
+  } else {
+    signalingTestResult.className = 'text-xs text-rose-400 font-medium';
+    signalingTestResult.textContent = `✕ ${health.error || 'Connection failed'}`;
+  }
+});
+
+btnSaveSignaling.addEventListener('click', () => {
+  const url = inputSignalingUrl.value.trim();
+  if (!url) {
+    showToast('Please enter a valid signaling URL', 'error');
+    return;
+  }
+  cfClient.setBaseUrl(url);
+  signalingModal.classList.add('hidden');
+  showToast('Signaling server updated!', 'success');
+  checkSignalingHealth();
+});
+
+btnResetSignaling.addEventListener('click', () => {
+  inputSignalingUrl.value = DEFAULT_SIGNALING_URL;
+  cfClient.setBaseUrl(DEFAULT_SIGNALING_URL);
+  signalingTestResult.textContent = 'Reset to default';
+  signalingTestResult.className = 'text-xs text-slate-400';
+  checkSignalingHealth();
+});
+
+// ----------------------------------------------------
+// 6-Digit PIN Pairing Flow (Host)
+// ----------------------------------------------------
+
+btnCreatePin.addEventListener('click', async () => {
+  btnCreatePin.disabled = true;
+  btnCreatePin.textContent = 'Generating PIN...';
 
   try {
     const newSessionId = 'rdr_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
@@ -352,7 +480,91 @@ btnCreateOffer.addEventListener('click', async () => {
     setupSignaling(newSessionId, 'host');
 
     const offerToken = await rtc.createOfferToken();
+
+    // Prepare offline fallback values
+    hostOfferTokenInput.value = offerToken;
+    QRCode.toCanvas(hostQrCanvas, offerToken, {
+      width: 240,
+      margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+    }).catch(() => {});
+
+    // Register room with Cloudflare Worker
+    const { code } = await cfClient.createRoom(offerToken, newSessionId);
+
     hostInitialStep.classList.add('hidden');
+    hostPinStep.classList.remove('hidden');
+    hostPinDisplay.textContent = `${code.slice(0, 3)} ${code.slice(3)}`;
+
+    // 120-second timer countdown
+    let remainingSeconds = 120;
+    hostPinTimer.textContent = `${remainingSeconds}s`;
+    if (hostPinTimerInterval) clearInterval(hostPinTimerInterval);
+    hostPinTimerInterval = setInterval(() => {
+      remainingSeconds--;
+      if (remainingSeconds <= 0) {
+        clearInterval(hostPinTimerInterval!);
+        hostPinTimerInterval = null;
+        showToast('Pairing PIN expired. Please generate a new code.', 'error');
+        resetHostPinState();
+      } else {
+        hostPinTimer.textContent = `${remainingSeconds}s`;
+      }
+    }, 1000);
+
+    // Start waiting for peer answer via Cloudflare Worker long-polling
+    hostPinAbortController = new AbortController();
+    cfClient
+      .waitForAnswer(code, hostPinAbortController.signal)
+      .then(async (answerToken) => {
+        if (hostPinTimerInterval) {
+          clearInterval(hostPinTimerInterval);
+          hostPinTimerInterval = null;
+        }
+        await rtc.acceptAnswerToken(answerToken);
+      })
+      .catch((err) => {
+        if (!hostPinAbortController?.signal.aborted) {
+          console.warn('Wait for answer error:', err);
+        }
+      });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(`Failed to generate pairing PIN: ${msg}`, 'error');
+    btnCreatePin.disabled = false;
+    btnCreatePin.textContent = 'Generate 6-Digit PIN';
+  }
+});
+
+btnCopyPin.addEventListener('click', () => {
+  const raw = hostPinDisplay.textContent?.replace(/\s+/g, '') || '';
+  if (raw && raw !== '------') {
+    navigator.clipboard.writeText(raw);
+    showToast('PIN copied to clipboard!', 'success');
+  }
+});
+
+btnCancelPin.addEventListener('click', () => {
+  resetHostPinState();
+  showToast('Pairing PIN canceled', 'info');
+});
+
+btnToggleHostOffline.addEventListener('click', () => {
+  const isHidden = hostOfflineSection.classList.toggle('hidden');
+  hostOfflineArrow.textContent = isHidden ? '▼' : '▲';
+});
+
+btnCreateOfferOffline.addEventListener('click', async () => {
+  btnCreateOfferOffline.disabled = true;
+  btnCreateOfferOffline.textContent = 'Generating...';
+
+  try {
+    const newSessionId = 'rdr_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    rtc.setSessionId(newSessionId);
+    rtc.setRole('host');
+    setupSignaling(newSessionId, 'host');
+
+    const offerToken = await rtc.createOfferToken();
     hostQrStep.classList.remove('hidden');
 
     hostOfferTokenInput.value = offerToken;
@@ -361,11 +573,12 @@ btnCreateOffer.addEventListener('click', async () => {
       margin: 2,
       color: { dark: '#000000', light: '#ffffff' },
     });
+    showToast('Offline offer ready! Scan QR code or copy token.', 'success');
   } catch (err) {
-    showToast(`Failed to create offer: ${err}`, 'error');
+    showToast(`Failed to create offline offer: ${err}`, 'error');
   } finally {
-    btnCreateOffer.disabled = false;
-    btnCreateOffer.textContent = 'Generate Pairing Code';
+    btnCreateOfferOffline.disabled = false;
+    btnCreateOfferOffline.textContent = 'Generate Offline QR Code';
   }
 });
 
@@ -388,6 +601,72 @@ btnSubmitAnswer.addEventListener('click', async () => {
   } finally {
     btnSubmitAnswer.disabled = false;
   }
+});
+
+// ----------------------------------------------------
+// 6-Digit PIN Pairing Flow (Joiner)
+// ----------------------------------------------------
+
+async function handleJoinPinSubmit() {
+  const raw = joinPinInput.value.replace(/\D/g, '');
+  if (raw.length !== 6) {
+    showToast('Please enter a 6-digit PIN', 'error');
+    return;
+  }
+
+  btnSubmitPin.disabled = true;
+  joinPinStatus.classList.remove('hidden');
+  joinPinStatusText.textContent = 'Fetching Host invitation...';
+
+  try {
+    const { offer, sessionId } = await cfClient.joinRoom(raw);
+    rtc.setRole('joiner');
+    if (sessionId) {
+      rtc.setSessionId(sessionId);
+      setupSignaling(sessionId, 'joiner');
+    }
+
+    joinPinStatusText.textContent = 'Generating WebRTC Answer...';
+    const answerToken = await rtc.acceptOfferAndCreateAnswerToken(offer);
+
+    joinPinStatusText.textContent = 'Delivering answer to Host...';
+    await cfClient.submitAnswer(raw, answerToken);
+
+    joinPinStatusText.textContent = 'Connecting direct LAN WebRTC link...';
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(`Pairing failed: ${msg}`, 'error');
+    joinPinStatus.classList.add('hidden');
+    btnSubmitPin.disabled = false;
+  }
+}
+
+joinPinInput.addEventListener('input', () => {
+  const digits = joinPinInput.value.replace(/\D/g, '').slice(0, 6);
+  if (digits.length > 3) {
+    joinPinInput.value = `${digits.slice(0, 3)} ${digits.slice(3)}`;
+  } else {
+    joinPinInput.value = digits;
+  }
+
+  if (digits.length === 6) {
+    handleJoinPinSubmit();
+  }
+});
+
+joinPinInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    handleJoinPinSubmit();
+  }
+});
+
+btnSubmitPin.addEventListener('click', () => {
+  handleJoinPinSubmit();
+});
+
+btnToggleJoinOffline.addEventListener('click', () => {
+  const isHidden = joinOfflineSection.classList.toggle('hidden');
+  joinOfflineArrow.textContent = isHidden ? '▼' : '▲';
 });
 
 btnProcessOffer.addEventListener('click', async () => {
@@ -858,5 +1137,7 @@ btnSendSnippet.addEventListener('click', () => {
   }
 });
 
-// Run session restoration check on page load
+// Run session restoration check and signaling health on page load
 tryRestoreSessionOnRefresh();
+checkSignalingHealth();
+

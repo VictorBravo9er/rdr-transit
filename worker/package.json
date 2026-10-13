@@ -1,0 +1,26 @@
+{
+  "name": "rdr-transit-signaling-worker",
+  "version": "1.0.0",
+  "description": "Ephemeral 6-digit pairing and WebRTC signaling Cloudflare Worker for RDR-Transit",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "build": "tsc --noEmit"
+  },
+  "keywords": [
+    "cloudflare-worker",
+    "webrtc",
+    "signaling",
+    "p2p"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^3.109.2"
+  }
+}
